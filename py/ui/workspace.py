@@ -29,9 +29,17 @@ CREATE TABLE IF NOT EXISTS inputs (
   fingerprint TEXT
 );
 
+CREATE TABLE IF NOT EXISTS files (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  run_id INTEGER NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  out_dir TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS reports (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   run_id INTEGER NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+  file_id INTEGER REFERENCES files(id) ON DELETE SET NULL,
   type TEXT NOT NULL,
   title TEXT,
   md_path TEXT,
@@ -58,9 +66,18 @@ class RunRow:
 
 
 @dataclass
+class FileRow:
+    id: int
+    run_id: int
+    name: str
+    out_dir: str
+
+
+@dataclass
 class ReportRow:
     id: int
     run_id: int
+    file_id: Optional[int]
     type: str
     title: str
     md_path: Optional[str]
@@ -80,6 +97,10 @@ def init_db(db_path: str) -> None:
     try:
         conn.executescript(SCHEMA_SQL)
         conn.commit()
+        # best-effort migration for existing workspaces
+        from .migrate import migrate
+
+        migrate(conn)
     finally:
         conn.close()
 
@@ -130,10 +151,28 @@ def add_input(conn: sqlite3.Connection, *, run_id: int, path: str) -> None:
         )
 
 
+def add_file(conn: sqlite3.Connection, *, run_id: int, name: str, out_dir: str) -> int:
+    cur = conn.execute(
+        "INSERT INTO files(run_id,name,out_dir) VALUES(?,?,?)",
+        (run_id, name, out_dir),
+    )
+    conn.commit()
+    return int(cur.lastrowid)
+
+
+def list_files(conn: sqlite3.Connection, run_id: int) -> List[FileRow]:
+    rows = conn.execute(
+        "SELECT id, run_id, name, out_dir FROM files WHERE run_id=? ORDER BY id DESC",
+        (run_id,),
+    ).fetchall()
+    return [FileRow(int(r["id"]), int(r["run_id"]), r["name"], r["out_dir"]) for r in rows]
+
+
 def add_report(
     conn: sqlite3.Connection,
     *,
     run_id: int,
+    file_id: Optional[int],
     type_: str,
     title: str,
     md_path: Optional[str],
@@ -141,8 +180,8 @@ def add_report(
     created_at: str,
 ) -> int:
     cur = conn.execute(
-        "INSERT INTO reports(run_id,type,title,md_path,xlsx_path,created_at) VALUES(?,?,?,?,?,?)",
-        (run_id, type_, title, md_path, xlsx_path, created_at),
+        "INSERT INTO reports(run_id,file_id,type,title,md_path,xlsx_path,created_at) VALUES(?,?,?,?,?,?,?)",
+        (run_id, file_id, type_, title, md_path, xlsx_path, created_at),
     )
     report_id = int(cur.lastrowid)
 
@@ -169,18 +208,23 @@ def list_runs(conn: sqlite3.Connection, limit: int = 200) -> List[RunRow]:
     return [RunRow(int(r["id"]), r["started_at"], r["out_dir"], float(r["slow_threshold_sec"]), r["note"]) for r in rows]
 
 
-def list_reports(conn: sqlite3.Connection, run_id: Optional[int] = None) -> List[ReportRow]:
-    if run_id is None:
+def list_reports(conn: sqlite3.Connection, run_id: Optional[int] = None, file_id: Optional[int] = None) -> List[ReportRow]:
+    if file_id is not None:
         rows = conn.execute(
-            "SELECT id, run_id, type, COALESCE(title,'') AS title, md_path, xlsx_path, created_at FROM reports ORDER BY id DESC"
+            "SELECT id, run_id, file_id, type, COALESCE(title,'') AS title, md_path, xlsx_path, created_at FROM reports WHERE file_id=? ORDER BY id DESC",
+            (file_id,),
+        ).fetchall()
+    elif run_id is None:
+        rows = conn.execute(
+            "SELECT id, run_id, file_id, type, COALESCE(title,'') AS title, md_path, xlsx_path, created_at FROM reports ORDER BY id DESC"
         ).fetchall()
     else:
         rows = conn.execute(
-            "SELECT id, run_id, type, COALESCE(title,'') AS title, md_path, xlsx_path, created_at FROM reports WHERE run_id=? ORDER BY id DESC",
+            "SELECT id, run_id, file_id, type, COALESCE(title,'') AS title, md_path, xlsx_path, created_at FROM reports WHERE run_id=? ORDER BY id DESC",
             (run_id,),
         ).fetchall()
     return [
-        ReportRow(int(r["id"]), int(r["run_id"]), r["type"], r["title"], r["md_path"], r["xlsx_path"], r["created_at"])
+        ReportRow(int(r["id"]), int(r["run_id"]), (int(r["file_id"]) if r["file_id"] is not None else None), r["type"], r["title"], r["md_path"], r["xlsx_path"], r["created_at"])
         for r in rows
     ]
 
@@ -195,9 +239,9 @@ def search_reports(conn: sqlite3.Connection, query: str, limit: int = 200) -> Li
 
 def get_report(conn: sqlite3.Connection, report_id: int) -> Optional[ReportRow]:
     r = conn.execute(
-        "SELECT id, run_id, type, COALESCE(title,'') AS title, md_path, xlsx_path, created_at FROM reports WHERE id=?",
+        "SELECT id, run_id, file_id, type, COALESCE(title,'') AS title, md_path, xlsx_path, created_at FROM reports WHERE id=?",
         (report_id,),
     ).fetchone()
     if not r:
         return None
-    return ReportRow(int(r["id"]), int(r["run_id"]), r["type"], r["title"], r["md_path"], r["xlsx_path"], r["created_at"])
+    return ReportRow(int(r["id"]), int(r["run_id"]), (int(r["file_id"]) if r["file_id"] is not None else None), r["type"], r["title"], r["md_path"], r["xlsx_path"], r["created_at"])

@@ -29,12 +29,14 @@ import markdown as mdlib
 
 from .workspace import (
     RunRow,
+    add_file,
     add_input,
     add_report,
     add_run,
     connect_db,
     get_report,
     init_db,
+    list_files,
     list_reports,
     list_runs,
     search_reports,
@@ -88,6 +90,7 @@ class MainWindow(QMainWindow):
 
         # UI
         self.run_list = QListWidget()
+        self.file_list = QListWidget()
         self.report_list = QListWidget()
         self.preview = QTextBrowser()
         self.preview.setOpenExternalLinks(True)
@@ -98,11 +101,13 @@ class MainWindow(QMainWindow):
 
         splitter = QSplitter(Qt.Horizontal)
         splitter.addWidget(self.run_list)
+        splitter.addWidget(self.file_list)
         splitter.addWidget(self.report_list)
         splitter.addWidget(self.preview)
         splitter.setStretchFactor(0, 1)
         splitter.setStretchFactor(1, 2)
-        splitter.setStretchFactor(2, 5)
+        splitter.setStretchFactor(2, 3)
+        splitter.setStretchFactor(3, 6)
 
         root = QWidget()
         layout = QVBoxLayout(root)
@@ -111,6 +116,7 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(root)
 
         self.run_list.itemSelectionChanged.connect(self.on_select_run)
+        self.file_list.itemSelectionChanged.connect(self.on_select_file)
         self.report_list.itemSelectionChanged.connect(self.on_select_report)
 
         tb = QToolBar("Main")
@@ -152,14 +158,15 @@ class MainWindow(QMainWindow):
                 item.setData(Qt.UserRole, r.id)
                 self.run_list.addItem(item)
 
+            self.file_list.clear()
             # default: all reports
-            self.populate_reports(conn, None)
+            self.populate_reports(conn, run_id=None, file_id=None)
         finally:
             conn.close()
 
-    def populate_reports(self, conn, run_id: Optional[int]):
+    def populate_reports(self, conn, run_id: Optional[int], file_id: Optional[int]):
         self.report_list.clear()
-        for rep in list_reports(conn, run_id=run_id):
+        for rep in list_reports(conn, run_id=run_id, file_id=file_id):
             title = rep.title or os.path.basename(rep.md_path or rep.xlsx_path or "")
             item = QListWidgetItem(f"[{rep.type}] {title}")
             item.setData(Qt.UserRole, rep.id)
@@ -169,10 +176,37 @@ class MainWindow(QMainWindow):
         if not self.ws:
             return
         items = self.run_list.selectedItems()
-        run_id = items[0].data(Qt.UserRole) if items else None
+        run_id = int(items[0].data(Qt.UserRole)) if items else None
+
+        self.file_list.clear()
+        self.report_list.clear()
+        self.preview.setPlainText("")
+
+        if run_id is None:
+            return
+
         conn = connect_db(self.ws.db_path)
         try:
-            self.populate_reports(conn, run_id)
+            for f in list_files(conn, run_id):
+                it = QListWidgetItem(f.name)
+                it.setData(Qt.UserRole, f.id)
+                self.file_list.addItem(it)
+            # If no file rows (older runs), fall back to showing reports by run
+            if self.file_list.count() == 0:
+                self.populate_reports(conn, run_id=run_id, file_id=None)
+        finally:
+            conn.close()
+
+    def on_select_file(self):
+        if not self.ws:
+            return
+        run_items = self.run_list.selectedItems()
+        run_id = int(run_items[0].data(Qt.UserRole)) if run_items else None
+        file_items = self.file_list.selectedItems()
+        file_id = int(file_items[0].data(Qt.UserRole)) if file_items else None
+        conn = connect_db(self.ws.db_path)
+        try:
+            self.populate_reports(conn, run_id=run_id, file_id=file_id)
         finally:
             conn.close()
 
@@ -208,13 +242,21 @@ class MainWindow(QMainWindow):
         conn = connect_db(self.ws.db_path)
         try:
             ids = set(search_reports(conn, q))
+
+            # Optional scope: if a run is selected, only show matches in that run
+            run_items = self.run_list.selectedItems()
+            run_id = int(run_items[0].data(Qt.UserRole)) if run_items else None
+
             self.report_list.clear()
-            for rep in list_reports(conn, run_id=None):
-                if rep.id in ids:
-                    title = rep.title or os.path.basename(rep.md_path or rep.xlsx_path or "")
-                    item = QListWidgetItem(f"[{rep.type}] {title}")
-                    item.setData(Qt.UserRole, rep.id)
-                    self.report_list.addItem(item)
+            for rep in list_reports(conn, run_id=None, file_id=None):
+                if rep.id not in ids:
+                    continue
+                if run_id is not None and rep.run_id != run_id:
+                    continue
+                title = rep.title or os.path.basename(rep.md_path or rep.xlsx_path or "")
+                item = QListWidgetItem(f"[{rep.type}] {title}")
+                item.setData(Qt.UserRole, rep.id)
+                self.report_list.addItem(item)
         finally:
             conn.close()
 
@@ -259,19 +301,28 @@ class MainWindow(QMainWindow):
 
             created_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-            # Find md/xlsx pairs
-            for fn in sorted(os.listdir(out_dir)):
-                p = os.path.join(out_dir, fn)
-                if fn.endswith("_deadlock_report.md"):
-                    add_report(conn, run_id=run_id, type_="deadlock", title=fn, md_path=p, xlsx_path=None, created_at=created_at)
-                elif fn.endswith("_slowquery_report.md"):
-                    base = fn.replace("_slowquery_report.md", "")
-                    xlsx = os.path.join(out_dir, base + "_slowquery.xlsx")
-                    add_report(conn, run_id=run_id, type_="slowquery", title=fn, md_path=p, xlsx_path=(xlsx if os.path.exists(xlsx) else None), created_at=created_at)
-                elif fn.endswith("_blocking_report.md"):
-                    base = fn.replace("_blocking_report.md", "")
-                    xlsx = os.path.join(out_dir, base + "_blocking.xlsx")
-                    add_report(conn, run_id=run_id, type_="blocking", title=fn, md_path=p, xlsx_path=(xlsx if os.path.exists(xlsx) else None), created_at=created_at)
+            # Per-input subfolders: scan each folder and register file + reports
+            for sub in sorted(os.listdir(out_dir)):
+                if sub == "tmp":
+                    continue
+                subdir = os.path.join(out_dir, sub)
+                if not os.path.isdir(subdir):
+                    continue
+
+                file_id = add_file(conn, run_id=run_id, name=sub, out_dir=subdir)
+
+                for fn in sorted(os.listdir(subdir)):
+                    p = os.path.join(subdir, fn)
+                    if fn.endswith("_deadlock_report.md"):
+                        add_report(conn, run_id=run_id, file_id=file_id, type_="deadlock", title=fn, md_path=p, xlsx_path=None, created_at=created_at)
+                    elif fn.endswith("_slowquery_report.md"):
+                        base = fn.replace("_slowquery_report.md", "")
+                        xlsx = os.path.join(subdir, base + "_slowquery.xlsx")
+                        add_report(conn, run_id=run_id, file_id=file_id, type_="slowquery", title=fn, md_path=p, xlsx_path=(xlsx if os.path.exists(xlsx) else None), created_at=created_at)
+                    elif fn.endswith("_blocking_report.md"):
+                        base = fn.replace("_blocking_report.md", "")
+                        xlsx = os.path.join(subdir, base + "_blocking.xlsx")
+                        add_report(conn, run_id=run_id, file_id=file_id, type_="blocking", title=fn, md_path=p, xlsx_path=(xlsx if os.path.exists(xlsx) else None), created_at=created_at)
 
             conn.commit()
         finally:

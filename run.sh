@@ -60,14 +60,24 @@ run_one() {
   local base
   base="$(basename "$xel")"
   base="${base%.xel}"
+
+  # Per-input subfolder (safe name)
+  local safe_base
+  safe_base="$(echo "$base" | sed -E 's/[^A-Za-z0-9._-]+/_/g; s/^_+//; s/_+$//')"
+  if [[ -z "$safe_base" ]]; then safe_base="input"; fi
+
+  local FILE_OUT
+  FILE_OUT="$OUT_DIR/$safe_base"
+  mkdir -p "$FILE_OUT"
+
   local ts
   ts="$(date +%Y%m%d_%H%M%S)"
   local prefix="${base}_${ts}"
 
   echo "==> Processing: $xel"
 
-  # Always generate summary
-  "$DOTNET" run --project "$REPO_ROOT/src/XelDump" -- "$xel" -o "$OUT_DIR" --max 2000 >/dev/null
+  # Always generate summary (per input folder)
+  "$DOTNET" run --project "$REPO_ROOT/src/XelDump" -- "$xel" -o "$FILE_OUT" --max 2000 >/dev/null
 
   # Deadlock
   if [[ "$base" == *deadlock* ]]; then
@@ -76,7 +86,7 @@ run_one() {
       --deadlock-jsonl "$OUT_DIR/tmp/${prefix}_deadlock.jsonl" \
       --source-xel "$xel" \
       --prefix "$prefix" \
-      --out "$OUT_DIR" >/dev/null
+      --out "$FILE_OUT" >/dev/null
   fi
 
   # Slow queries
@@ -87,7 +97,7 @@ run_one() {
       --slow-threshold "$SLOW_THRESHOLD" \
       --source-xel "$xel" \
       --prefix "$prefix" \
-      --out "$OUT_DIR" >/dev/null
+      --out "$FILE_OUT" >/dev/null
   fi
 
   # Blocking
@@ -97,7 +107,7 @@ run_one() {
       --blocking-jsonl "$OUT_DIR/tmp/${prefix}_blocking.jsonl" \
       --source-xel "$xel" \
       --prefix "$prefix" \
-      --out "$OUT_DIR" >/dev/null
+      --out "$FILE_OUT" >/dev/null
   fi
 
   echo "   Done: $prefix"
