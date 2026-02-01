@@ -1,0 +1,24 @@
+# macOS
+.DS_Store
+
+# XEL (can contain sensitive SQL text / hostnames)
+*.xel
+*.xem
+
+# .NET
+bin/
+obj/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+
+# Output artifacts
+output/
+reports/
+*.json
+*.jsonl
+*.csv
+*.md
+!README.md
