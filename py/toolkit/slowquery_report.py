@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional
 import pandas as pd
 
 from .xel_jsonl import iter_events
+from .context import pick_context
 
 
 _ILLEGAL_EXCEL_RE = re.compile(r"[\x00-\x08\x0B\x0C\x0E-\x1F]")
@@ -67,6 +68,8 @@ def generate_slowquery_reports_from_jsonl(
         sql_text = actions.get("sql_text") or fields.get("statement") or fields.get("batch_text")
         sql_text = _clean_excel_text(sql_text)
 
+        ctx = pick_context(str(sql_text or ""))
+
         rows.append(
             {
                 "event": ev.name,
@@ -83,7 +86,12 @@ def generate_slowquery_reports_from_jsonl(
                 "client_app_name": _clean_excel_text(actions.get("client_app_name")),
                 "client_hostname": _clean_excel_text(actions.get("client_hostname")),
                 "session_id": actions.get("session_id"),
-                "object_name": fields.get("object_name"),
+                "object_name": _clean_excel_text(fields.get("object_name")),
+                "context_raw": _clean_excel_text(ctx.raw) if ctx else None,
+                "context_key": _clean_excel_text(ctx.key) if ctx else None,
+                "context_module": _clean_excel_text(ctx.module) if ctx else None,
+                "context_function": _clean_excel_text(ctx.function) if ctx else None,
+                "context_process": _clean_excel_text(ctx.process) if ctx else None,
                 "sql_text": sql_text,
             }
         )
@@ -114,12 +122,20 @@ def generate_slowquery_reports_from_jsonl(
     # Basic aggregations
     by_db = df.groupby("database_name")["duration_sec"].agg(["count", "mean", "max"]).sort_values("count", ascending=False)
     by_app = df.groupby("client_app_name")["duration_sec"].agg(["count", "mean", "max"]).sort_values("count", ascending=False)
+    by_ctx = (
+        df.dropna(subset=["context_key"])
+        .groupby("context_key")["duration_sec"]
+        .agg(["count", "mean", "max"])
+        .sort_values("count", ascending=False)
+    )
 
     with pd.ExcelWriter(xlsx_path, engine="openpyxl") as w:
         df_sorted.to_excel(w, sheet_name="Events", index=False)
         df_sorted.head(50).to_excel(w, sheet_name="Top50_Duration", index=False)
         by_db.reset_index().to_excel(w, sheet_name="ByDatabase", index=False)
         by_app.reset_index().to_excel(w, sheet_name="ByApp", index=False)
+        if not by_ctx.empty:
+            by_ctx.reset_index().to_excel(w, sheet_name="ByContext", index=False)
 
     # Markdown summary
     md: List[str] = []
@@ -145,6 +161,15 @@ def generate_slowquery_reports_from_jsonl(
             f"{r['duration_sec']:.3f} | {r.get('database_name','')} | {r.get('client_app_name','')} | {r.get('username','')} | {r.get('session_id','')} | {r.get('object_name','')} | {sql}"
         )
     md.append("")
+
+    if not by_ctx.empty:
+        md.append("## By context (top 15 by count)")
+        md.append("")
+        md.append("context | count | mean_sec | max_sec")
+        md.append("---|---:|---:|---:")
+        for _, r in by_ctx.reset_index().head(15).iterrows():
+            md.append(f"{r['context_key']} | {int(r['count'])} | {r['mean']:.3f} | {r['max']:.3f}")
+        md.append("")
 
     md.append("## By database (top 10 by count)")
     md.append("")

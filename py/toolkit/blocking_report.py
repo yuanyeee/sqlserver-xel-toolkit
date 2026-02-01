@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional
 import pandas as pd
 
 from .xel_jsonl import iter_events
+from .context import pick_context
 
 
 _ILLEGAL_EXCEL_RE = re.compile(r"[\x00-\x08\x0B\x0C\x0E-\x1F]")
@@ -209,6 +210,9 @@ def generate_blocking_reports_from_jsonl(
         blocked_sql = parsed.get("blocked_inputbuf")
         blocking_sql = parsed.get("blocking_inputbuf")
 
+        blocked_ctx = pick_context(str(blocked_sql or ""))
+        blocking_ctx = pick_context(str(blocking_sql or ""))
+
         rows.append(
             {
                 "timestamp": ev.timestamp,
@@ -228,6 +232,8 @@ def generate_blocking_reports_from_jsonl(
                 "username": _clean_excel_text(actions.get("username") or actions.get("nt_username") or actions.get("session_nt_username")),
                 "blocked_inputbuf": _clean_excel_text(blocked_sql),
                 "blocking_inputbuf": _clean_excel_text(blocking_sql),
+                "blocked_context_key": _clean_excel_text(blocked_ctx.key) if blocked_ctx else None,
+                "blocking_context_key": _clean_excel_text(blocking_ctx.key) if blocking_ctx else None,
                 "blocked_table_guess": _clean_excel_text(_extract_table_from_sql(blocked_sql or "")),
                 "blocking_table_guess": _clean_excel_text(_extract_table_from_sql(blocking_sql or "")),
             }
@@ -261,6 +267,9 @@ def generate_blocking_reports_from_jsonl(
     by_blocked_table = df["blocked_table_guess"].value_counts().head(50)
     by_blocking_table = df["blocking_table_guess"].value_counts().head(50)
 
+    by_blocked_ctx = df["blocked_context_key"].value_counts().head(50)
+    by_blocking_ctx = df["blocking_context_key"].value_counts().head(50)
+
     by_db = df["database_name"].value_counts().head(50)
     by_lock = df["lock_mode"].value_counts().head(50)
 
@@ -273,6 +282,8 @@ def generate_blocking_reports_from_jsonl(
         by_lock.reset_index(name="count").to_excel(w, sheet_name="ByLockMode", index=False)
         by_blocked_table.reset_index(name="count").to_excel(w, sheet_name="Blocked_Table_Guess", index=False)
         by_blocking_table.reset_index(name="count").to_excel(w, sheet_name="Blocking_Table_Guess", index=False)
+        by_blocked_ctx.reset_index(name="count").to_excel(w, sheet_name="Blocked_Context", index=False)
+        by_blocking_ctx.reset_index(name="count").to_excel(w, sheet_name="Blocking_Context", index=False)
 
     md: List[str] = []
     md.append("# Blocking Report (from XEL)")
@@ -299,6 +310,12 @@ def generate_blocking_reports_from_jsonl(
         md.append("---|---:")
         md.extend(rows_)
         md.append("")
+
+    md_table(
+        "Blocked context top 15",
+        "context | count",
+        [f"{k} | {v}" for k, v in df["blocked_context_key"].value_counts().head(15).items() if str(k).strip() and k != "None"],
+    )
 
     md_table(
         "Blocked table (guess) top 15",
