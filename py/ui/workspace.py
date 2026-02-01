@@ -213,6 +213,23 @@ def delete_run_db(conn: sqlite3.Connection, run_id: int) -> None:
     conn.commit()
 
 
+def delete_report_db(conn: sqlite3.Connection, report_id: int) -> None:
+    conn.execute("DELETE FROM reports_fts WHERE report_id=?", (report_id,))
+    conn.execute("DELETE FROM reports WHERE id=?", (report_id,))
+    conn.commit()
+
+
+def delete_file_db(conn: sqlite3.Connection, file_id: int) -> None:
+    # Remove reports and fts entries associated with this file
+    rows = conn.execute("SELECT id FROM reports WHERE file_id=?", (file_id,)).fetchall()
+    for r in rows:
+        rid = int(r[0])
+        conn.execute("DELETE FROM reports_fts WHERE report_id=?", (rid,))
+    conn.execute("DELETE FROM reports WHERE file_id=?", (file_id,))
+    conn.execute("DELETE FROM files WHERE id=?", (file_id,))
+    conn.commit()
+
+
 def list_reports(conn: sqlite3.Connection, run_id: Optional[int] = None, file_id: Optional[int] = None) -> List[ReportRow]:
     if file_id is not None:
         rows = conn.execute(

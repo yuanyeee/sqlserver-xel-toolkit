@@ -48,7 +48,9 @@ from .workspace import (
 from .time_range_dialog import TimeRangeDialog
 from .cleanup_inputmd_dialog import CleanupInputMdDialog
 from .delete_run_dialog import DeleteRunDialog
-from .workspace import delete_run_db
+from .delete_file_dialog import DeleteFileDialog
+from .delete_report_dialog import DeleteReportDialog
+from .workspace import delete_run_db, delete_file_db, delete_report_db
 from .delete_utils import trash_paths
 
 
@@ -161,6 +163,14 @@ class MainWindow(QMainWindow):
         btn_del_run = QPushButton("删除 Run…")
         btn_del_run.clicked.connect(self.delete_selected_run)
         tb.addWidget(btn_del_run)
+
+        btn_del_file = QPushButton("删除 File…")
+        btn_del_file.clicked.connect(self.delete_selected_file)
+        tb.addWidget(btn_del_file)
+
+        btn_del_report = QPushButton("删除 Report…")
+        btn_del_report.clicked.connect(self.delete_selected_report)
+        tb.addWidget(btn_del_report)
 
         btn_it = QPushButton("Open IntegratedTool")
         btn_it.clicked.connect(self.open_integratedtool)
@@ -323,7 +333,6 @@ class MainWindow(QMainWindow):
             return
         run_id = int(items[0].data(Qt.UserRole))
 
-        # Load run out_dir
         conn = connect_db(self.ws.db_path)
         try:
             r = conn.execute("SELECT out_dir FROM runs WHERE id=?", (run_id,)).fetchone()
@@ -339,12 +348,86 @@ class MainWindow(QMainWindow):
         if dlg.exec() != QDialog.Accepted or not dlg.choice:
             return
 
-        # Execute
         if dlg.choice.delete_files and os.path.exists(out_dir):
             trash_paths([out_dir])
         conn = connect_db(self.ws.db_path)
         try:
             delete_run_db(conn, run_id)
+        finally:
+            conn.close()
+
+        self.reload_lists()
+
+    def delete_selected_file(self):
+        if not self.ws:
+            QMessageBox.warning(self, "Workspace", "Open workspace first")
+            return
+        file_items = self.file_list.selectedItems()
+        if not file_items:
+            QMessageBox.information(self, "File", "请选择要删除的 File")
+            return
+        file_id = int(file_items[0].data(Qt.UserRole))
+        file_name = file_items[0].text()
+
+        conn = connect_db(self.ws.db_path)
+        try:
+            r = conn.execute("SELECT out_dir FROM files WHERE id=?", (file_id,)).fetchone()
+            out_dir = r[0] if r else None
+        finally:
+            conn.close()
+
+        if not out_dir:
+            QMessageBox.warning(self, "File", "找不到该 File 的 out_dir")
+            return
+
+        dlg = DeleteFileDialog(self.ws.root, out_dir, file_name, self)
+        if dlg.exec() != QDialog.Accepted or not dlg.choice:
+            return
+
+        if dlg.choice.delete_files and os.path.exists(out_dir):
+            trash_paths([out_dir])
+
+        conn = connect_db(self.ws.db_path)
+        try:
+            delete_file_db(conn, file_id)
+        finally:
+            conn.close()
+
+        self.reload_lists()
+
+    def delete_selected_report(self):
+        if not self.ws:
+            QMessageBox.warning(self, "Workspace", "Open workspace first")
+            return
+        rep_items = self.report_list.selectedItems()
+        if not rep_items:
+            QMessageBox.information(self, "Report", "请选择要删除的 Report")
+            return
+        report_id = int(rep_items[0].data(Qt.UserRole))
+
+        conn = connect_db(self.ws.db_path)
+        try:
+            rep = get_report(conn, report_id)
+        finally:
+            conn.close()
+
+        if not rep:
+            QMessageBox.warning(self, "Report", "找不到该 Report")
+            return
+
+        title = rep.title or os.path.basename(rep.md_path or rep.xlsx_path or "")
+        paths = [p for p in [rep.md_path, rep.xlsx_path] if p]
+
+        dlg = DeleteReportDialog(self.ws.root, title, paths, self)
+        if dlg.exec() != QDialog.Accepted or not dlg.choice:
+            return
+
+        if dlg.choice.delete_files:
+            trash_paths(paths)
+
+        conn = connect_db(self.ws.db_path)
+        try:
+            delete_report_db(conn, report_id)
         finally:
             conn.close()
 
