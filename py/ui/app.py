@@ -265,7 +265,12 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Workspace", "Open workspace first")
             return
 
-        files, _ = QFileDialog.getOpenFileNames(self, "Select .xel files", os.path.expanduser("~/Downloads"), "XEL Files (*.xel)")
+        files, _ = QFileDialog.getOpenFileNames(
+            self,
+            "Select input files (.xel/.csv/.xlsx)",
+            os.path.expanduser("~/Downloads"),
+            "All supported (*.xel *.csv *.xlsx *.xls);;XEL (*.xel);;CSV (*.csv);;Excel (*.xlsx *.xls)"
+        )
         if not files:
             return
 
