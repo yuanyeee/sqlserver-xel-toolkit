@@ -48,7 +48,19 @@ pip install -r py/requirements.txt
 - `reports/<source>_<timestamp>_slowquery_report.md`
 - `reports/<source>_<timestamp>_xel_summary.md/json`
 
-> blocking のレポート生成はこれから実装します（blocked_process_report は検出できています）。
+### SQL Server 接続によるオブジェクト名解決（任意）
+
+blocking のレポートでは `database_id/object_id/index_id` が取れるため、
+環境変数 `MSSQL_CONNSTR` を設定すると **実オブジェクト名（table/index）を解決**してレポートに追記します。
+
+- 未設定の場合：**何もせず**（エラーなし）離線のままレポート生成します
+- 設定したが接続できない場合：**警告のみ**で処理継続します
+
+例:
+```bash
+export MSSQL_CONNSTR='Server=...;Database=master;User Id=...;Password=...;TrustServerCertificate=True;'
+./run.sh ~/Downloads/blocking*.xel -o ./reports
+```
 
 ### 3) XEL のイベント構造だけ見たい場合
 ```bash

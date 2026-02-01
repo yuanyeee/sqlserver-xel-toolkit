@@ -7,6 +7,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{BA5D5241-2F6
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "XelDump", "src\XelDump\XelDump.csproj", "{4070BD59-E1DF-4D69-8703-8FB1489638DA}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ObjectMapper", "src\ObjectMapper\ObjectMapper.csproj", "{6C9298D8-5EA7-4B0D-A830-93F215F8AF6D}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -20,8 +22,13 @@ Global
 		{4070BD59-E1DF-4D69-8703-8FB1489638DA}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{4070BD59-E1DF-4D69-8703-8FB1489638DA}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{4070BD59-E1DF-4D69-8703-8FB1489638DA}.Release|Any CPU.Build.0 = Release|Any CPU
+		{6C9298D8-5EA7-4B0D-A830-93F215F8AF6D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{6C9298D8-5EA7-4B0D-A830-93F215F8AF6D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{6C9298D8-5EA7-4B0D-A830-93F215F8AF6D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{6C9298D8-5EA7-4B0D-A830-93F215F8AF6D}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{4070BD59-E1DF-4D69-8703-8FB1489638DA} = {BA5D5241-2F6F-4B6A-88E3-1E79A086FB9B}
+		{6C9298D8-5EA7-4B0D-A830-93F215F8AF6D} = {BA5D5241-2F6F-4B6A-88E3-1E79A086FB9B}
 	EndGlobalSection
 EndGlobal

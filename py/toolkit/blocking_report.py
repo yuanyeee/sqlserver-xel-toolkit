@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 import os
 import re
+import subprocess
 import xml.etree.ElementTree as ET
 from collections import Counter
 from datetime import datetime
@@ -97,6 +99,90 @@ def _parse_blocked_process_xml(xml_text: str) -> Dict[str, Any]:
     return out
 
 
+def _try_enrich_object_names(df: pd.DataFrame, out_dir: str, prefix: str) -> pd.DataFrame:
+    """Optionally enrich df with database/object/index names.
+
+    If MSSQL_CONNSTR is not set or mapping fails, returns df unchanged.
+    """
+    conn = os.environ.get("MSSQL_CONNSTR")
+    if not conn:
+        return df
+
+    try:
+        # Collect unique keys
+        keys = (
+            df[["database_id", "object_id", "index_id"]]
+            .dropna(subset=["database_id", "object_id"])
+            .drop_duplicates()
+            .to_dict(orient="records")
+        )
+
+        if not keys:
+            return df
+
+        tmp_dir = os.path.join(out_dir, "tmp")
+        os.makedirs(tmp_dir, exist_ok=True)
+        keys_path = os.path.join(tmp_dir, f"{prefix}_object_keys.json")
+        map_path = os.path.join(tmp_dir, f"{prefix}_object_map.json")
+
+        with open(keys_path, "w", encoding="utf-8") as f:
+            json.dump(
+                [
+                    {
+                        "database_id": int(k.get("database_id")),
+                        "object_id": int(k.get("object_id")),
+                        "index_id": (int(k["index_id"]) if k.get("index_id") not in (None, "", float("nan")) else None),
+                    }
+                    for k in keys
+                    if k.get("database_id") and k.get("object_id")
+                ],
+                f,
+            )
+
+        # Run dotnet mapper (optional). It reads MSSQL_CONNSTR from env.
+        repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+        dotnet = "/usr/local/share/dotnet/dotnet"
+        cmd = [
+            dotnet,
+            "run",
+            "--project",
+            os.path.join(repo_root, "src", "ObjectMapper"),
+            "--",
+            "--in",
+            keys_path,
+            "--out",
+            map_path,
+        ]
+
+        subprocess.run(cmd, check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+        if not os.path.exists(map_path):
+            return df
+
+        with open(map_path, "r", encoding="utf-8") as f:
+            m = json.load(f) or {}
+
+        if not m:
+            return df
+
+        def _mk_key(r):
+            dbid = r.get("database_id")
+            oid = r.get("object_id")
+            iid = r.get("index_id")
+            iid_s = "" if iid is None or (isinstance(iid, float) and pd.isna(iid)) else str(int(iid))
+            return f"{int(dbid)}|{int(oid)}|{iid_s}"
+
+        keys_series = df.apply(_mk_key, axis=1)
+        df = df.copy()
+        df["database_name_resolved"] = keys_series.map(lambda k: (m.get(k) or {}).get("database_name"))
+        df["object_name_resolved"] = keys_series.map(lambda k: (m.get(k) or {}).get("object_name"))
+        df["index_name_resolved"] = keys_series.map(lambda k: (m.get(k) or {}).get("index_name"))
+        return df
+
+    except Exception:
+        return df
+
+
 def generate_blocking_reports_from_jsonl(
     jsonl_path: str,
     *,
@@ -126,6 +212,7 @@ def generate_blocking_reports_from_jsonl(
         rows.append(
             {
                 "timestamp": ev.timestamp,
+                "database_id": fields.get("database_id") or actions.get("database_id"),
                 "database_name": _clean_excel_text(fields.get("database_name") or actions.get("database_name")),
                 "duration_us": fields.get("duration"),
                 "duration_sec": duration_sec,
@@ -147,6 +234,7 @@ def generate_blocking_reports_from_jsonl(
         )
 
     df = pd.DataFrame(rows)
+    df = _try_enrich_object_names(df, out_dir=out_dir, prefix=prefix)
 
     created = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     xlsx_path = os.path.join(out_dir, f"{prefix}_blocking.xlsx")
