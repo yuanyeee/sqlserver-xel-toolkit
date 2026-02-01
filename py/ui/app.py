@@ -324,6 +324,17 @@ class MainWindow(QMainWindow):
                         xlsx = os.path.join(subdir, base + "_blocking.xlsx")
                         add_report(conn, run_id=run_id, file_id=file_id, type_="blocking", title=fn, md_path=p, xlsx_path=(xlsx if os.path.exists(xlsx) else None), created_at=created_at)
 
+                # CSV/Excel generated MD items
+                md_root = os.path.join(subdir, "md")
+                if os.path.isdir(md_root):
+                    for root2, _, files2 in os.walk(md_root):
+                        for fn2 in sorted(files2):
+                            if not fn2.endswith(".md"):
+                                continue
+                            p2 = os.path.join(root2, fn2)
+                            rel = os.path.relpath(p2, subdir)
+                            add_report(conn, run_id=run_id, file_id=file_id, type_="mditem", title=rel, md_path=p2, xlsx_path=None, created_at=created_at)
+
             conn.commit()
         finally:
             conn.close()

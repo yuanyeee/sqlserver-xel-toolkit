@@ -63,9 +63,11 @@ fi
 
 run_one() {
   local xel="$1"
+  local ext
+  ext="${xel##*.}"
   local base
   base="$(basename "$xel")"
-  base="${base%.xel}"
+  base="${base%.*}"
 
   # Per-input subfolder (safe name)
   local safe_base
@@ -82,7 +84,16 @@ run_one() {
 
   echo "==> Processing: $xel"
 
-  # Always generate summary (per input folder)
+  # Branch by input type
+  if [[ "$ext" == "csv" || "$ext" == "CSV" || "$ext" == "xlsx" || "$ext" == "xls" || "$ext" == "XLSX" || "$ext" == "XLS" ]]; then
+    # CSV/Excel -> per-row MD
+    mkdir -p "$FILE_OUT/md"
+    python3 "$REPO_ROOT/py/csv_excel_to_md.py" --in "$xel" --out "$FILE_OUT/md" >/dev/null
+    echo "   Done (csv/excel->md): $base"
+    return
+  fi
+
+  # XEL: Always generate summary (per input folder)
   "$DOTNET" run --project "$REPO_ROOT/src/XelDump" -- "$xel" -o "$FILE_OUT" --max 2000 >/dev/null
 
   # Deadlock
