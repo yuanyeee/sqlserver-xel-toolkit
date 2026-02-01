@@ -10,6 +10,11 @@ if [[ ! -d .venv ]]; then
 fi
 
 . .venv/bin/activate
-pip install -q -r py/requirements.txt
+
+# Ensure modern packaging tooling so PyQt wheels resolve correctly on macOS
+python -m pip install -q --upgrade pip setuptools wheel
+
+# Prefer binary wheels; avoid building PyQt from source (requires qmake)
+python -m pip install -q --only-binary=:all: -r py/requirements.txt
 
 python3 -m py.ui.app
