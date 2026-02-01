@@ -13,6 +13,7 @@ import pandas as pd
 
 from .xel_jsonl import iter_events
 from .context import pick_context
+from .timeutil import in_range, merge_range, parse_iso, range_tag
 
 
 _ILLEGAL_EXCEL_RE = re.compile(r"[\x00-\x08\x0B\x0C\x0E-\x1F]")
@@ -189,11 +190,20 @@ def generate_blocking_reports_from_jsonl(
     *,
     out_dir: str,
     source_xel: str,
-    prefix: str,
+    prefix_base: str,
+    start_jst=None,
+    end_jst=None,
 ) -> Dict[str, str]:
     rows: List[Dict[str, Any]] = []
+    r = (None, None)
 
     for ev in iter_events(jsonl_path, event_name="blocked_process_report"):
+        dt = parse_iso(ev.timestamp or "")
+        if dt is not None:
+            if not in_range(dt, start_jst, end_jst):
+                continue
+            r = merge_range(r, dt)
+
         fields = ev.fields
         actions = ev.actions
 
@@ -243,6 +253,9 @@ def generate_blocking_reports_from_jsonl(
     df = _try_enrich_object_names(df, out_dir=out_dir, prefix=prefix)
 
     created = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    lo, hi = r
+    tag = range_tag(lo, hi)
+    prefix = f"{prefix_base}_{tag}"
     xlsx_path = os.path.join(out_dir, f"{prefix}_blocking.xlsx")
     md_path = os.path.join(out_dir, f"{prefix}_blocking_report.md")
 

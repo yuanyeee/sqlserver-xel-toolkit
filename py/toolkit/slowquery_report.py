@@ -10,6 +10,7 @@ import pandas as pd
 
 from .xel_jsonl import iter_events
 from .context import pick_context
+from .timeutil import in_range, merge_range, parse_iso, range_tag
 
 
 _ILLEGAL_EXCEL_RE = re.compile(r"[\x00-\x08\x0B\x0C\x0E-\x1F]")
@@ -48,14 +49,22 @@ def generate_slowquery_reports_from_jsonl(
     *,
     out_dir: str,
     source_xel: str,
-    prefix: str,
+    prefix_base: str,
     threshold_sec: float = 3.0,
+    start_jst=None,
+    end_jst=None,
 ) -> Dict[str, str]:
     rows: List[Dict[str, Any]] = []
+    r = (None, None)
 
     for ev in iter_events(jsonl_path):
         if ev.name.lower() not in ("rpc_completed", "sql_batch_completed"):
             continue
+
+        dt = parse_iso(ev.timestamp or "")
+        if dt is not None:
+            if not in_range(dt, start_jst, end_jst):
+                continue
 
         fields = ev.fields
         actions = ev.actions
@@ -64,6 +73,9 @@ def generate_slowquery_reports_from_jsonl(
         duration_sec = _duration_us_to_s(duration_us)
         if duration_sec is None or duration_sec < threshold_sec:
             continue
+
+        if dt is not None:
+            r = merge_range(r, dt)
 
         sql_text = actions.get("sql_text") or fields.get("statement") or fields.get("batch_text")
         sql_text = _clean_excel_text(sql_text)
@@ -99,6 +111,9 @@ def generate_slowquery_reports_from_jsonl(
     df = pd.DataFrame(rows)
 
     created = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    lo, hi = r
+    tag = range_tag(lo, hi)
+    prefix = f"{prefix_base}_{tag}"
     xlsx_path = os.path.join(out_dir, f"{prefix}_slowquery.xlsx")
     md_path = os.path.join(out_dir, f"{prefix}_slowquery_report.md")
 

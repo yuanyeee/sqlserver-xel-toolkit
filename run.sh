@@ -5,11 +5,13 @@ DOTNET="/usr/local/share/dotnet/dotnet"
 REPO_ROOT="$(cd "$(dirname "$0")" && pwd)"
 OUT_DIR="$REPO_ROOT/reports"
 SLOW_THRESHOLD="3"
+START_JST=""
+END_JST=""
 
 usage() {
   cat <<'EOF'
 Usage:
-  ./run.sh <xel path|glob> [more xel ...] [-o OUT_DIR] [--slow-threshold SEC]
+  ./run.sh <xel path|glob> [more xel ...] [-o OUT_DIR] [--slow-threshold SEC] [--start "YYYY-mm-dd HH:MM"] [--end "YYYY-mm-dd HH:MM"]
 
 Examples:
   ./run.sh ~/Downloads/deadlock*.xel
@@ -27,6 +29,10 @@ while [[ $# -gt 0 ]]; do
       OUT_DIR="$2"; shift 2;;
     --slow-threshold)
       SLOW_THRESHOLD="$2"; shift 2;;
+    --start)
+      START_JST="$2"; shift 2;;
+    --end)
+      END_JST="$2"; shift 2;;
     *)
       inputs+=("$1"); shift;;
   esac
@@ -86,7 +92,9 @@ run_one() {
       --deadlock-jsonl "$OUT_DIR/tmp/${prefix}_deadlock.jsonl" \
       --source-xel "$xel" \
       --prefix "$prefix" \
-      --out "$FILE_OUT" >/dev/null
+      --out "$FILE_OUT" \
+      ${START_JST:+--start "$START_JST"} \
+      ${END_JST:+--end "$END_JST"} >/dev/null
   fi
 
   # Slow queries
@@ -97,7 +105,9 @@ run_one() {
       --slow-threshold "$SLOW_THRESHOLD" \
       --source-xel "$xel" \
       --prefix "$prefix" \
-      --out "$FILE_OUT" >/dev/null
+      --out "$FILE_OUT" \
+      ${START_JST:+--start "$START_JST"} \
+      ${END_JST:+--end "$END_JST"} >/dev/null
   fi
 
   # Blocking
@@ -107,7 +117,9 @@ run_one() {
       --blocking-jsonl "$OUT_DIR/tmp/${prefix}_blocking.jsonl" \
       --source-xel "$xel" \
       --prefix "$prefix" \
-      --out "$FILE_OUT" >/dev/null
+      --out "$FILE_OUT" \
+      ${START_JST:+--start "$START_JST"} \
+      ${END_JST:+--end "$END_JST"} >/dev/null
   fi
 
   echo "   Done: $prefix"

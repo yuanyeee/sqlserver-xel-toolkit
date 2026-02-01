@@ -9,6 +9,7 @@ from datetime import datetime
 from typing import Dict, Iterable, List, Optional, Tuple
 
 from .xel_jsonl import iter_events
+from .timeutil import in_range, merge_range, parse_iso, range_tag
 
 
 @dataclass
@@ -75,25 +76,40 @@ def generate_deadlock_report_from_jsonl(
     *,
     out_dir: str,
     source_xel: str,
-    prefix: str,
+    prefix_base: str,
+    start_jst=None,
+    end_jst=None,
 ) -> str:
-    """Generate a Markdown report from exported xml_deadlock_report events."""
+    """Generate a Markdown report from exported xml_deadlock_report events.
+
+    Filtering and filename tag are based on XEL event timestamps converted to JST.
+    """
 
     items: List[DeadlockItem] = []
+    r = (None, None)
 
     for ev in iter_events(jsonl_path, event_name="xml_deadlock_report"):
         xml_report = ev.fields.get("xml_report")
         if not xml_report:
             continue
+
+        dt = parse_iso(ev.timestamp or "")
+        if dt is not None:
+            if not in_range(dt, start_jst, end_jst):
+                continue
+            r = merge_range(r, dt)
+
         try:
             item = _parse_deadlock_xml(str(xml_report))
             item.timestamp = ev.timestamp
             items.append(item)
         except Exception:
-            # Ignore bad rows but keep going
             continue
 
     created = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    lo, hi = r
+    tag = range_tag(lo, hi)
+    prefix = f"{prefix_base}_{tag}"
 
     # Summary counts
     by_object = Counter()
