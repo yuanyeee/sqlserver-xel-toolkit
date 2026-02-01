@@ -273,7 +273,10 @@ class MainWindow(QMainWindow):
 
         # Run IntegratedTool with system python; user can manage its own venv separately.
         try:
-            subprocess.Popen(["python3", entry], cwd=it_dir)
+            env = os.environ.copy()
+            if self.ws:
+                env["XEL_TOOLKIT_WORKSPACE"] = self.ws.root
+            subprocess.Popen(["python3", entry], cwd=it_dir, env=env)
         except Exception as e:
             QMessageBox.critical(self, "IntegratedTool", str(e))
 

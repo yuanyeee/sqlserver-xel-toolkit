@@ -86,9 +86,23 @@ run_one() {
 
   # Branch by input type
   if [[ "$ext" == "csv" || "$ext" == "CSV" || "$ext" == "xlsx" || "$ext" == "xls" || "$ext" == "XLSX" || "$ext" == "XLS" ]]; then
-    # CSV/Excel -> per-row MD
-    mkdir -p "$FILE_OUT/md"
-    python3 "$REPO_ROOT/py/csv_excel_to_md.py" --in "$xel" --out "$FILE_OUT/md" >/dev/null
+    # CSV/Excel -> per-row MD (unified under workspace inputMD if provided)
+    local RUN_TAG
+    RUN_TAG="$(date +%Y%m%d_%H%M%S)"
+
+    local WS
+    WS="${XEL_TOOLKIT_WORKSPACE:-}"
+
+    if [[ -n "$WS" ]]; then
+      local INPUTMD
+      INPUTMD="$WS/inputMD/$safe_base"
+      mkdir -p "$INPUTMD"
+      python3 "$REPO_ROOT/py/csv_excel_to_md.py" --in "$xel" --out "$INPUTMD" --run-tag "$RUN_TAG" >/dev/null
+    else
+      mkdir -p "$FILE_OUT/md"
+      python3 "$REPO_ROOT/py/csv_excel_to_md.py" --in "$xel" --out "$FILE_OUT/md" --run-tag "$RUN_TAG" >/dev/null
+    fi
+
     echo "   Done (csv/excel->md): $base"
     return
   fi

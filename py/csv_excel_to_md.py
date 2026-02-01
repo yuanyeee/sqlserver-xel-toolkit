@@ -66,6 +66,7 @@ def main():
     ap.add_argument("--out", dest="out", required=True, help="Output folder (md files will be created inside)")
     ap.add_argument("--sheet", help="Excel sheet name (optional)")
     ap.add_argument("--limit", type=int, default=0, help="Limit rows (0=all)")
+    ap.add_argument("--run-tag", help="Unique run tag, e.g. 20260201_2105")
     args = ap.parse_args()
 
     inp = os.path.expanduser(args.inp)
@@ -83,6 +84,8 @@ def main():
     if args.limit and args.limit > 0:
         df = df.head(args.limit)
 
+    run_tag = args.run_tag or datetime.now().strftime("%Y%m%d_%H%M%S")
+
     for i, (_, r) in enumerate(df.iterrows(), 1):
         row = {c: (None if pd.isna(r.get(c)) else r.get(c)) for c in df.columns}
 
@@ -92,8 +95,8 @@ def main():
             if dt:
                 date_part = dt.strftime("%Y%m%d")
 
-        folder = os.path.join(out, date_part)
-        filename = f"{date_part}_row_{i}.md"
+        folder = os.path.join(out, run_tag, date_part)
+        filename = f"{date_part}_{run_tag}_row_{i}.md"
         title = f"{os.path.basename(inp)} row {i}"
         _write_md(os.path.join(folder, filename), title, row)
 
