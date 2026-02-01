@@ -21,8 +21,37 @@ SQL Server Extended Events (`.xel`) を **macOS上でオフライン解析**し�
 - [ ] SlowQuery XEL → レポート生成
 - [ ] Blocking XEL → 可能な範囲でレポート生成（セッション構成次第）
 
-## 使い方（予定）
+## 使い方
+
+### 1) セットアップ（初回のみ）
 ```bash
-# 例: XEL を解析して output/ に出す
-./run.sh ~/Downloads/Slow_Queries_0_*.xel
+cd sqlserver-xel-toolkit
+python3 -m venv .venv
+. .venv/bin/activate
+pip install -r py/requirements.txt
+```
+
+### 2) レポート生成（推奨）
+```bash
+# 例: 3種類のXELをまとめて処理
+./run.sh \
+  ~/Downloads/blocking*.xel \
+  ~/Downloads/deadlock*.xel \
+  ~/Downloads/Slow_Queries*.xel \
+  -o ./reports \
+  --slow-threshold 3
+```
+
+出力先（例）:
+- `reports/<source>_<timestamp>_deadlock_report.md`
+- `reports/<source>_<timestamp>_slowquery.xlsx`
+- `reports/<source>_<timestamp>_slowquery_report.md`
+- `reports/<source>_<timestamp>_xel_summary.md/json`
+
+> blocking のレポート生成はこれから実装します（blocked_process_report は検出できています）。
+
+### 3) XEL のイベント構造だけ見たい場合
+```bash
+/usr/local/share/dotnet/dotnet run --project src/XelDump -- \
+  ~/Downloads/deadlock*.xel -o ./output --max 2000
 ```
