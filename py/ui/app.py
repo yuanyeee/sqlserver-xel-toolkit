@@ -54,18 +54,22 @@ class RunWorker(QThread):
     finished_ok = pyqtSignal(str)
     finished_err = pyqtSignal(str)
 
-    def __init__(self, repo_root: str, xel_paths: List[str], out_dir: str, slow_threshold: float):
+    def __init__(self, repo_root: str, xel_paths: List[str], out_dir: str, slow_threshold: float, workspace_root: Optional[str]):
         super().__init__()
         self.repo_root = repo_root
         self.xel_paths = xel_paths
         self.out_dir = out_dir
         self.slow_threshold = slow_threshold
+        self.workspace_root = workspace_root
 
     def run(self):
         try:
             cmd = [os.path.join(self.repo_root, "run.sh"), *self.xel_paths, "-o", self.out_dir, "--slow-threshold", str(self.slow_threshold)]
             self.log.emit("$ " + " ".join(cmd))
-            p = subprocess.Popen(cmd, cwd=self.repo_root, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+            env = os.environ.copy()
+            if self.workspace_root:
+                env["XEL_TOOLKIT_WORKSPACE"] = self.workspace_root
+            p = subprocess.Popen(cmd, cwd=self.repo_root, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=env)
             assert p.stdout
             for line in p.stdout:
                 self.log.emit(line.rstrip("\n"))
@@ -300,7 +304,7 @@ class MainWindow(QMainWindow):
         os.makedirs(out_dir, exist_ok=True)
 
         # Run in background
-        self.worker = RunWorker(self.repo_root, files, out_dir, slow)
+        self.worker = RunWorker(self.repo_root, files, out_dir, slow, self.ws.root if self.ws else None)
         self.worker.log.connect(self.append_log)
         self.worker.finished_ok.connect(lambda _: self.on_run_finished(files, out_dir, slow))
         self.worker.finished_err.connect(self.on_run_error)
