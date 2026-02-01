@@ -24,20 +24,25 @@ class DeleteFileChoice:
 
 
 class DeleteFileDialog(QDialog):
-    def __init__(self, workspace_root: str, file_out_dir: str, file_name: str, parent=None):
+    def __init__(self, workspace_root: str, file_out_dirs: list[str], file_names: list[str], parent=None):
         super().__init__(parent)
         self.setWindowTitle("删除 File")
-        self.resize(560, 260)
+        self.resize(560, 280)
 
         self.workspace_root = workspace_root
-        self.file_out_dir = file_out_dir
-        self.file_name = file_name
+        self.file_out_dirs = [d for d in file_out_dirs if d]
+        self.file_names = [n for n in file_names if n]
         self.choice: Optional[DeleteFileChoice] = None
 
         layout = QVBoxLayout(self)
-        layout.addWidget(QLabel("删除当前选中的 File（run 内输出目录）与/或从数据库移除。\ninputMD 不会被影响。"))
-        layout.addWidget(QLabel(f"File: {file_name}"))
-        layout.addWidget(QLabel(f"输出目录: {file_out_dir}"))
+        layout.addWidget(QLabel("删除选中的 File（run 内输出目录）与/或从数据库移除。\ninputMD 不会被影响。"))
+        layout.addWidget(QLabel(f"选中数量: {len(self.file_out_dirs)}"))
+        if self.file_names:
+            layout.addWidget(QLabel("File(部分):"))
+            for n in self.file_names[:4]:
+                layout.addWidget(QLabel(n))
+            if len(self.file_names) > 4:
+                layout.addWidget(QLabel(f"... ({len(self.file_names) - 4} more)"))
 
         self.rb_trash = QRadioButton("从 DB 移除，并将该 File 输出目录移动到回收站（推荐）")
         self.rb_trash.setChecked(True)
@@ -58,9 +63,9 @@ class DeleteFileDialog(QDialog):
         layout.addLayout(btns)
 
     def on_ok(self):
-        if self.file_out_dir and os.path.exists(self.file_out_dir):
-            if not is_within(self.workspace_root, self.file_out_dir):
-                QMessageBox.critical(self, "安全检查", f"拒绝删除 workspace 外路径: {self.file_out_dir}")
+        for d in self.file_out_dirs:
+            if d and os.path.exists(d) and not is_within(self.workspace_root, d):
+                QMessageBox.critical(self, "安全检查", f"拒绝删除 workspace 外路径: {d}")
                 return
 
         if self.rb_trash.isChecked():

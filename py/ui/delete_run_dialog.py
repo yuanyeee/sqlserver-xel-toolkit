@@ -25,18 +25,24 @@ class DeleteRunChoice:
 
 
 class DeleteRunDialog(QDialog):
-    def __init__(self, workspace_root: str, run_out_dir: str, parent=None):
+    def __init__(self, workspace_root: str, run_out_dirs: list[str], parent=None):
         super().__init__(parent)
         self.setWindowTitle("删除 Run")
-        self.resize(520, 240)
+        self.resize(560, 280)
 
         self.workspace_root = workspace_root
-        self.run_out_dir = run_out_dir
+        self.run_out_dirs = [d for d in run_out_dirs if d]
         self.choice: Optional[DeleteRunChoice] = None
 
         layout = QVBoxLayout(self)
         layout.addWidget(QLabel("删除 Run（runs 目录）与/或从数据库移除。inputMD 不会被影响。"))
-        layout.addWidget(QLabel(f"Run 输出目录: {run_out_dir}"))
+        layout.addWidget(QLabel(f"选中数量: {len(self.run_out_dirs)}"))
+        if self.run_out_dirs:
+            layout.addWidget(QLabel("输出目录(部分):"))
+            for d in self.run_out_dirs[:4]:
+                layout.addWidget(QLabel(d))
+            if len(self.run_out_dirs) > 4:
+                layout.addWidget(QLabel(f"... ({len(self.run_out_dirs) - 4} more)"))
 
         self.rb_trash = QRadioButton("从 DB 移除，并将 runs 目录移动到回收站（推荐）")
         self.rb_trash.setChecked(True)
@@ -58,9 +64,9 @@ class DeleteRunDialog(QDialog):
 
     def on_ok(self):
         # safety
-        if self.run_out_dir and os.path.exists(self.run_out_dir):
-            if not is_within(self.workspace_root, self.run_out_dir):
-                QMessageBox.critical(self, "安全检查", f"拒绝删除 workspace 外路径: {self.run_out_dir}")
+        for d in self.run_out_dirs:
+            if d and os.path.exists(d) and not is_within(self.workspace_root, d):
+                QMessageBox.critical(self, "安全检查", f"拒绝删除 workspace 外路径: {d}")
                 return
 
         if self.rb_trash.isChecked():

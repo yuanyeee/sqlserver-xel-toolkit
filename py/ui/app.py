@@ -26,7 +26,7 @@ from ._qt import (
     QWidget,
 )
 
-from PySide6.QtWidgets import QDialog
+from PySide6.QtWidgets import QDialog, QAbstractItemView
 
 import markdown as mdlib
 
@@ -108,8 +108,11 @@ class MainWindow(QMainWindow):
 
         # UI
         self.run_list = QListWidget()
+        self.run_list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.file_list = QListWidget()
+        self.file_list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.report_list = QListWidget()
+        self.report_list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.preview = QTextBrowser()
         self.preview.setOpenExternalLinks(True)
 
@@ -331,28 +334,34 @@ class MainWindow(QMainWindow):
         if not items:
             QMessageBox.information(self, "Run", "请选择要删除的 Run")
             return
-        run_id = int(items[0].data(Qt.UserRole))
+
+        run_ids = [int(it.data(Qt.UserRole)) for it in items]
 
         conn = connect_db(self.ws.db_path)
         try:
-            r = conn.execute("SELECT out_dir FROM runs WHERE id=?", (run_id,)).fetchone()
-            out_dir = r[0] if r else None
+            out_dirs = []
+            for run_id in run_ids:
+                r = conn.execute("SELECT out_dir FROM runs WHERE id=?", (run_id,)).fetchone()
+                if r and r[0]:
+                    out_dirs.append(r[0])
         finally:
             conn.close()
 
-        if not out_dir:
-            QMessageBox.warning(self, "Run", "找不到该 Run 的 out_dir")
+        if not out_dirs:
+            QMessageBox.warning(self, "Run", "找不到选中 Run 的 out_dir")
             return
 
-        dlg = DeleteRunDialog(self.ws.root, out_dir, self)
+        dlg = DeleteRunDialog(self.ws.root, out_dirs, self)
         if dlg.exec() != QDialog.Accepted or not dlg.choice:
             return
 
-        if dlg.choice.delete_files and os.path.exists(out_dir):
-            trash_paths([out_dir])
+        if dlg.choice.delete_files:
+            trash_paths([d for d in out_dirs if os.path.exists(d)])
+
         conn = connect_db(self.ws.db_path)
         try:
-            delete_run_db(conn, run_id)
+            for run_id in run_ids:
+                delete_run_db(conn, run_id)
         finally:
             conn.close()
 
@@ -366,30 +375,35 @@ class MainWindow(QMainWindow):
         if not file_items:
             QMessageBox.information(self, "File", "请选择要删除的 File")
             return
-        file_id = int(file_items[0].data(Qt.UserRole))
-        file_name = file_items[0].text()
+
+        file_ids = [int(it.data(Qt.UserRole)) for it in file_items]
+        file_names = [it.text() for it in file_items]
 
         conn = connect_db(self.ws.db_path)
         try:
-            r = conn.execute("SELECT out_dir FROM files WHERE id=?", (file_id,)).fetchone()
-            out_dir = r[0] if r else None
+            out_dirs = []
+            for file_id in file_ids:
+                r = conn.execute("SELECT out_dir FROM files WHERE id=?", (file_id,)).fetchone()
+                if r and r[0]:
+                    out_dirs.append(r[0])
         finally:
             conn.close()
 
-        if not out_dir:
-            QMessageBox.warning(self, "File", "找不到该 File 的 out_dir")
+        if not out_dirs:
+            QMessageBox.warning(self, "File", "找不到选中 File 的 out_dir")
             return
 
-        dlg = DeleteFileDialog(self.ws.root, out_dir, file_name, self)
+        dlg = DeleteFileDialog(self.ws.root, out_dirs, file_names, self)
         if dlg.exec() != QDialog.Accepted or not dlg.choice:
             return
 
-        if dlg.choice.delete_files and os.path.exists(out_dir):
-            trash_paths([out_dir])
+        if dlg.choice.delete_files:
+            trash_paths([d for d in out_dirs if os.path.exists(d)])
 
         conn = connect_db(self.ws.db_path)
         try:
-            delete_file_db(conn, file_id)
+            for file_id in file_ids:
+                delete_file_db(conn, file_id)
         finally:
             conn.close()
 
@@ -403,20 +417,26 @@ class MainWindow(QMainWindow):
         if not rep_items:
             QMessageBox.information(self, "Report", "请选择要删除的 Report")
             return
-        report_id = int(rep_items[0].data(Qt.UserRole))
+
+        report_ids = [int(it.data(Qt.UserRole)) for it in rep_items]
 
         conn = connect_db(self.ws.db_path)
         try:
-            rep = get_report(conn, report_id)
+            reps = [get_report(conn, rid) for rid in report_ids]
         finally:
             conn.close()
 
-        if not rep:
-            QMessageBox.warning(self, "Report", "找不到该 Report")
+        reps = [r for r in reps if r]
+        if not reps:
+            QMessageBox.warning(self, "Report", "找不到选中 Report")
             return
 
-        title = rep.title or os.path.basename(rep.md_path or rep.xlsx_path or "")
-        paths = [p for p in [rep.md_path, rep.xlsx_path] if p]
+        title = f"{len(reps)} Reports"
+        paths = []
+        for rep in reps:
+            for p in [rep.md_path, rep.xlsx_path]:
+                if p:
+                    paths.append(p)
 
         dlg = DeleteReportDialog(self.ws.root, title, paths, self)
         if dlg.exec() != QDialog.Accepted or not dlg.choice:
@@ -427,7 +447,8 @@ class MainWindow(QMainWindow):
 
         conn = connect_db(self.ws.db_path)
         try:
-            delete_report_db(conn, report_id)
+            for rid in report_ids:
+                delete_report_db(conn, rid)
         finally:
             conn.close()
 
