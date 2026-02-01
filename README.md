@@ -31,6 +31,17 @@ python3 -m venv .venv
 pip install -r py/requirements.txt
 ```
 
+## IntegratedTool（サブモジュール）
+
+このリポジトリには `yuanyeee/IntegratedTool` を **git submodule** として同梱できます。
+
+初回チェックアウト後は：
+```bash
+git submodule update --init --recursive
+```
+
+GUI の `Open IntegratedTool` ボタンから `unified_report_viewer.py` を起動できます。
+
 ## GUI（一覧管理 / 全文検索 / 高度フィルタ / MDプレビュー）
 
 > 現在は最小実装（Workspace + Run一覧 + Report一覧 + MDプレビュー + FTS検索）まで。

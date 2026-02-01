@@ -134,6 +134,10 @@ class MainWindow(QMainWindow):
         btn_refresh.clicked.connect(self.reload_lists)
         tb.addWidget(btn_refresh)
 
+        btn_it = QPushButton("Open IntegratedTool")
+        btn_it.clicked.connect(self.open_integratedtool)
+        tb.addWidget(btn_it)
+
         self.status = QLabel("")
         tb.addWidget(self.status)
 
@@ -259,6 +263,19 @@ class MainWindow(QMainWindow):
                 self.report_list.addItem(item)
         finally:
             conn.close()
+
+    def open_integratedtool(self):
+        it_dir = os.path.join(self.repo_root, "integratedtool")
+        entry = os.path.join(it_dir, "unified_report_viewer.py")
+        if not os.path.exists(entry):
+            QMessageBox.warning(self, "IntegratedTool", f"Not found: {entry}\nDid you init submodules?")
+            return
+
+        # Run IntegratedTool with system python; user can manage its own venv separately.
+        try:
+            subprocess.Popen(["python3", entry], cwd=it_dir)
+        except Exception as e:
+            QMessageBox.critical(self, "IntegratedTool", str(e))
 
     def new_run(self):
         if not self.ws:

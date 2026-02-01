@@ -1,0 +1,3 @@
+[submodule "integratedtool"]
+	path = integratedtool
+	url = https://github.com/yuanyeee/IntegratedTool.git
