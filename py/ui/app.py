@@ -26,6 +26,8 @@ from ._qt import (
     QWidget,
 )
 
+from PySide6.QtWidgets import QDialog
+
 import markdown as mdlib
 
 from .workspace import (
@@ -44,6 +46,10 @@ from .workspace import (
 )
 
 from .time_range_dialog import TimeRangeDialog
+from .cleanup_inputmd_dialog import CleanupInputMdDialog
+from .delete_run_dialog import DeleteRunDialog
+from .workspace import delete_run_db
+from .delete_utils import trash_paths
 
 
 @dataclass
@@ -147,6 +153,14 @@ class MainWindow(QMainWindow):
         btn_ranges = QPushButton("出力時間範囲…")
         btn_ranges.clicked.connect(self.open_time_ranges)
         tb.addWidget(btn_ranges)
+
+        btn_cleanup = QPushButton("清理 inputMD…")
+        btn_cleanup.clicked.connect(self.cleanup_inputmd)
+        tb.addWidget(btn_cleanup)
+
+        btn_del_run = QPushButton("删除 Run…")
+        btn_del_run.clicked.connect(self.delete_selected_run)
+        tb.addWidget(btn_del_run)
 
         btn_it = QPushButton("Open IntegratedTool")
         btn_it.clicked.connect(self.open_integratedtool)
@@ -291,6 +305,50 @@ class MainWindow(QMainWindow):
         assert path
         dlg = TimeRangeDialog(path, self)
         dlg.exec()
+
+    def cleanup_inputmd(self):
+        if not self.ws:
+            QMessageBox.warning(self, "Workspace", "Open workspace first")
+            return
+        dlg = CleanupInputMdDialog(self.ws.root, self)
+        dlg.exec()
+
+    def delete_selected_run(self):
+        if not self.ws:
+            QMessageBox.warning(self, "Workspace", "Open workspace first")
+            return
+        items = self.run_list.selectedItems()
+        if not items:
+            QMessageBox.information(self, "Run", "请选择要删除的 Run")
+            return
+        run_id = int(items[0].data(Qt.UserRole))
+
+        # Load run out_dir
+        conn = connect_db(self.ws.db_path)
+        try:
+            r = conn.execute("SELECT out_dir FROM runs WHERE id=?", (run_id,)).fetchone()
+            out_dir = r[0] if r else None
+        finally:
+            conn.close()
+
+        if not out_dir:
+            QMessageBox.warning(self, "Run", "找不到该 Run 的 out_dir")
+            return
+
+        dlg = DeleteRunDialog(self.ws.root, out_dir, self)
+        if dlg.exec() != QDialog.Accepted or not dlg.choice:
+            return
+
+        # Execute
+        if dlg.choice.delete_files and os.path.exists(out_dir):
+            trash_paths([out_dir])
+        conn = connect_db(self.ws.db_path)
+        try:
+            delete_run_db(conn, run_id)
+        finally:
+            conn.close()
+
+        self.reload_lists()
 
     def open_integratedtool(self):
         it_dir = os.path.join(self.repo_root, "integratedtool")

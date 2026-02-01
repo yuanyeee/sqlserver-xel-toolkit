@@ -208,6 +208,11 @@ def list_runs(conn: sqlite3.Connection, limit: int = 200) -> List[RunRow]:
     return [RunRow(int(r["id"]), r["started_at"], r["out_dir"], float(r["slow_threshold_sec"]), r["note"]) for r in rows]
 
 
+def delete_run_db(conn: sqlite3.Connection, run_id: int) -> None:
+    conn.execute("DELETE FROM runs WHERE id=?", (run_id,))
+    conn.commit()
+
+
 def list_reports(conn: sqlite3.Connection, run_id: Optional[int] = None, file_id: Optional[int] = None) -> List[ReportRow]:
     if file_id is not None:
         rows = conn.execute(
