@@ -31,6 +31,21 @@ python3 -m venv .venv
 pip install -r py/requirements.txt
 ```
 
+## GUI（一覧管理 / 全文検索 / 高度フィルタ / MDプレビュー）
+
+> 現在は最小実装（Workspace + Run一覧 + Report一覧 + MDプレビュー + FTS検索）まで。
+
+起動:
+```bash
+./run_gui.sh
+```
+
+使い方:
+1. `Open Workspace` で作業フォルダを選択（`workspace.db` を作成）
+2. `New Run` で `.xel` を選択 → 解析して `runs/<timestamp>/` に出力
+3. 生成済みレポートは一覧から選択して右側で Markdown プレビュー
+4. 上部検索ボックスで全文検索（SQLite FTS5）
+
 ### 2) レポート生成（推奨）
 ```bash
 # 例: 3種類のXELをまとめて処理

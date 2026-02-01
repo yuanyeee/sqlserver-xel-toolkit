@@ -1,0 +1,203 @@
+from __future__ import annotations
+
+import hashlib
+import os
+import sqlite3
+import time
+from dataclasses import dataclass
+from typing import Iterable, List, Optional, Tuple
+
+
+SCHEMA_SQL = """
+PRAGMA journal_mode=WAL;
+PRAGMA foreign_keys=ON;
+
+CREATE TABLE IF NOT EXISTS runs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  started_at TEXT NOT NULL,
+  out_dir TEXT NOT NULL,
+  slow_threshold_sec REAL NOT NULL,
+  note TEXT
+);
+
+CREATE TABLE IF NOT EXISTS inputs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  run_id INTEGER NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+  path TEXT NOT NULL,
+  size_bytes INTEGER,
+  mtime REAL,
+  fingerprint TEXT
+);
+
+CREATE TABLE IF NOT EXISTS reports (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  run_id INTEGER NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+  type TEXT NOT NULL,
+  title TEXT,
+  md_path TEXT,
+  xlsx_path TEXT,
+  created_at TEXT NOT NULL
+);
+
+CREATE VIRTUAL TABLE IF NOT EXISTS reports_fts USING fts5(
+  title,
+  type,
+  content,
+  report_id UNINDEXED
+);
+"""
+
+
+@dataclass
+class RunRow:
+    id: int
+    started_at: str
+    out_dir: str
+    slow_threshold_sec: float
+    note: Optional[str]
+
+
+@dataclass
+class ReportRow:
+    id: int
+    run_id: int
+    type: str
+    title: str
+    md_path: Optional[str]
+    xlsx_path: Optional[str]
+    created_at: str
+
+
+def connect_db(db_path: str) -> sqlite3.Connection:
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def init_db(db_path: str) -> None:
+    os.makedirs(os.path.dirname(db_path), exist_ok=True)
+    conn = connect_db(db_path)
+    try:
+        conn.executescript(SCHEMA_SQL)
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def compute_fingerprint(path: str, *, chunk_size: int = 4 * 1024 * 1024) -> str:
+    """Fast fingerprint: size + sha256(head) + sha256(tail)."""
+    st = os.stat(path)
+    size = st.st_size
+
+    h1 = hashlib.sha256()
+    h2 = hashlib.sha256()
+
+    with open(path, "rb") as f:
+        head = f.read(chunk_size)
+        h1.update(head)
+        if size > chunk_size:
+            try:
+                f.seek(max(0, size - chunk_size))
+                tail = f.read(chunk_size)
+            except OSError:
+                tail = b""
+            h2.update(tail)
+
+    return f"size={size};head={h1.hexdigest()};tail={h2.hexdigest()}"
+
+
+def add_run(conn: sqlite3.Connection, *, started_at: str, out_dir: str, slow_threshold_sec: float, note: str = "") -> int:
+    cur = conn.execute(
+        "INSERT INTO runs(started_at,out_dir,slow_threshold_sec,note) VALUES(?,?,?,?)",
+        (started_at, out_dir, slow_threshold_sec, note or None),
+    )
+    conn.commit()
+    return int(cur.lastrowid)
+
+
+def add_input(conn: sqlite3.Connection, *, run_id: int, path: str) -> None:
+    try:
+        st = os.stat(path)
+        fp = compute_fingerprint(path)
+        conn.execute(
+            "INSERT INTO inputs(run_id,path,size_bytes,mtime,fingerprint) VALUES(?,?,?,?,?)",
+            (run_id, path, st.st_size, st.st_mtime, fp),
+        )
+    except FileNotFoundError:
+        conn.execute(
+            "INSERT INTO inputs(run_id,path,size_bytes,mtime,fingerprint) VALUES(?,?,?,?,?)",
+            (run_id, path, None, None, None),
+        )
+
+
+def add_report(
+    conn: sqlite3.Connection,
+    *,
+    run_id: int,
+    type_: str,
+    title: str,
+    md_path: Optional[str],
+    xlsx_path: Optional[str],
+    created_at: str,
+) -> int:
+    cur = conn.execute(
+        "INSERT INTO reports(run_id,type,title,md_path,xlsx_path,created_at) VALUES(?,?,?,?,?,?)",
+        (run_id, type_, title, md_path, xlsx_path, created_at),
+    )
+    report_id = int(cur.lastrowid)
+
+    content = ""
+    if md_path and os.path.exists(md_path):
+        try:
+            with open(md_path, "r", encoding="utf-8") as f:
+                content = f.read()
+        except Exception:
+            content = ""
+
+    conn.execute(
+        "INSERT INTO reports_fts(title,type,content,report_id) VALUES(?,?,?,?)",
+        (title, type_, content, report_id),
+    )
+    return report_id
+
+
+def list_runs(conn: sqlite3.Connection, limit: int = 200) -> List[RunRow]:
+    rows = conn.execute(
+        "SELECT id, started_at, out_dir, slow_threshold_sec, note FROM runs ORDER BY id DESC LIMIT ?",
+        (limit,),
+    ).fetchall()
+    return [RunRow(int(r["id"]), r["started_at"], r["out_dir"], float(r["slow_threshold_sec"]), r["note"]) for r in rows]
+
+
+def list_reports(conn: sqlite3.Connection, run_id: Optional[int] = None) -> List[ReportRow]:
+    if run_id is None:
+        rows = conn.execute(
+            "SELECT id, run_id, type, COALESCE(title,'') AS title, md_path, xlsx_path, created_at FROM reports ORDER BY id DESC"
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT id, run_id, type, COALESCE(title,'') AS title, md_path, xlsx_path, created_at FROM reports WHERE run_id=? ORDER BY id DESC",
+            (run_id,),
+        ).fetchall()
+    return [
+        ReportRow(int(r["id"]), int(r["run_id"]), r["type"], r["title"], r["md_path"], r["xlsx_path"], r["created_at"])
+        for r in rows
+    ]
+
+
+def search_reports(conn: sqlite3.Connection, query: str, limit: int = 200) -> List[int]:
+    rows = conn.execute(
+        "SELECT report_id FROM reports_fts WHERE reports_fts MATCH ? LIMIT ?",
+        (query, limit),
+    ).fetchall()
+    return [int(r[0]) for r in rows]
+
+
+def get_report(conn: sqlite3.Connection, report_id: int) -> Optional[ReportRow]:
+    r = conn.execute(
+        "SELECT id, run_id, type, COALESCE(title,'') AS title, md_path, xlsx_path, created_at FROM reports WHERE id=?",
+        (report_id,),
+    ).fetchone()
+    if not r:
+        return None
+    return ReportRow(int(r["id"]), int(r["run_id"]), r["type"], r["title"], r["md_path"], r["xlsx_path"], r["created_at"])
