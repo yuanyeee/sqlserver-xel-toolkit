@@ -90,9 +90,14 @@ run_one() {
       --out "$OUT_DIR" >/dev/null
   fi
 
-  # Blocking: TODO (next)
+  # Blocking
   if [[ "$base" == *blocking* ]]; then
-    echo "[TODO] blocking report generation not implemented yet (blocked_process_report is present)." >&2
+    "$DOTNET" run --project "$REPO_ROOT/src/XelDump" -- "$xel" --export-jsonl "$OUT_DIR/tmp/${prefix}_blocking.jsonl" --filter blocked_process_report >/dev/null
+    python3 "$REPO_ROOT/py/generate_reports.py" \
+      --blocking-jsonl "$OUT_DIR/tmp/${prefix}_blocking.jsonl" \
+      --source-xel "$xel" \
+      --prefix "$prefix" \
+      --out "$OUT_DIR" >/dev/null
   fi
 
   echo "   Done: $prefix"

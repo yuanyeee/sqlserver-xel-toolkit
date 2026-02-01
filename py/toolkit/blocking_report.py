@@ -1,0 +1,242 @@
+from __future__ import annotations
+
+import os
+import re
+import xml.etree.ElementTree as ET
+from collections import Counter
+from datetime import datetime
+from typing import Any, Dict, List, Optional
+
+import pandas as pd
+
+from .xel_jsonl import iter_events
+
+
+_ILLEGAL_EXCEL_RE = re.compile(r"[\x00-\x08\x0B\x0C\x0E-\x1F]")
+
+
+def _clean_excel_text(s: Any) -> Any:
+    if s is None:
+        return None
+    try:
+        text = str(s)
+    except Exception:
+        return s
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    return _ILLEGAL_EXCEL_RE.sub("", text)
+
+
+def _duration_us_to_s(us: Any) -> Optional[float]:
+    try:
+        if us is None:
+            return None
+        return float(us) / 1_000_000.0
+    except Exception:
+        return None
+
+
+def _extract_table_from_sql(sql: str) -> Optional[str]:
+    if not sql:
+        return None
+    # Very simple heuristic, good enough for top stats.
+    s = re.sub(r"\s+", " ", sql.strip(), flags=re.M)
+    m = re.search(r"\bFROM\s+([\[\]\w\.]+)", s, flags=re.I)
+    if m:
+        return m.group(1)
+    m = re.search(r"\bUPDATE\s+([\[\]\w\.]+)", s, flags=re.I)
+    if m:
+        return m.group(1)
+    m = re.search(r"\bINTO\s+([\[\]\w\.]+)", s, flags=re.I)
+    if m:
+        return m.group(1)
+    return None
+
+
+def _parse_blocked_process_xml(xml_text: str) -> Dict[str, Any]:
+    """Parse SQL Server blocked process report XML.
+
+    We try to extract:
+      - blocked spid + waitresource + inputbuf
+      - blocking spid + inputbuf
+
+    XML shape can vary by version; we use robust searches.
+    """
+    root = ET.fromstring(xml_text)
+
+    # Sometimes root is <blocked-process-report>.
+    # Sometimes it's nested. Normalize to find the first blocked-process-report element.
+    bpr = root
+    if root.tag != "blocked-process-report":
+        found = root.find(".//blocked-process-report")
+        if found is not None:
+            bpr = found
+
+    out: Dict[str, Any] = {
+        "blocked_spid": None,
+        "blocking_spid": None,
+        "waitresource": None,
+        "blocked_inputbuf": None,
+        "blocking_inputbuf": None,
+    }
+
+    blocked_proc = bpr.find(".//blocked-process/process")
+    if blocked_proc is not None:
+        out["blocked_spid"] = blocked_proc.attrib.get("spid")
+        out["waitresource"] = blocked_proc.attrib.get("waitresource")
+        ib = blocked_proc.find(".//inputbuf")
+        if ib is not None and ib.text:
+            out["blocked_inputbuf"] = ib.text.strip()
+
+    blocking_proc = bpr.find(".//blocking-process/process")
+    if blocking_proc is not None:
+        out["blocking_spid"] = blocking_proc.attrib.get("spid")
+        ib = blocking_proc.find(".//inputbuf")
+        if ib is not None and ib.text:
+            out["blocking_inputbuf"] = ib.text.strip()
+
+    return out
+
+
+def generate_blocking_reports_from_jsonl(
+    jsonl_path: str,
+    *,
+    out_dir: str,
+    source_xel: str,
+    prefix: str,
+) -> Dict[str, str]:
+    rows: List[Dict[str, Any]] = []
+
+    for ev in iter_events(jsonl_path, event_name="blocked_process_report"):
+        fields = ev.fields
+        actions = ev.actions
+
+        duration_sec = _duration_us_to_s(fields.get("duration"))
+
+        parsed = {}
+        blocked_xml = fields.get("blocked_process")
+        if blocked_xml:
+            try:
+                parsed = _parse_blocked_process_xml(str(blocked_xml))
+            except Exception:
+                parsed = {}
+
+        blocked_sql = parsed.get("blocked_inputbuf")
+        blocking_sql = parsed.get("blocking_inputbuf")
+
+        rows.append(
+            {
+                "timestamp": ev.timestamp,
+                "database_name": _clean_excel_text(fields.get("database_name") or actions.get("database_name")),
+                "duration_us": fields.get("duration"),
+                "duration_sec": duration_sec,
+                "lock_mode": fields.get("lock_mode"),
+                "resource_owner_type": fields.get("resource_owner_type"),
+                "object_id": fields.get("object_id"),
+                "index_id": fields.get("index_id"),
+                "blocked_spid": parsed.get("blocked_spid") or actions.get("session_id"),
+                "blocking_spid": parsed.get("blocking_spid"),
+                "waitresource": parsed.get("waitresource"),
+                "client_app_name": _clean_excel_text(actions.get("client_app_name")),
+                "client_hostname": _clean_excel_text(actions.get("client_hostname")),
+                "username": _clean_excel_text(actions.get("username") or actions.get("nt_username") or actions.get("session_nt_username")),
+                "blocked_inputbuf": _clean_excel_text(blocked_sql),
+                "blocking_inputbuf": _clean_excel_text(blocking_sql),
+                "blocked_table_guess": _clean_excel_text(_extract_table_from_sql(blocked_sql or "")),
+                "blocking_table_guess": _clean_excel_text(_extract_table_from_sql(blocking_sql or "")),
+            }
+        )
+
+    df = pd.DataFrame(rows)
+
+    created = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    xlsx_path = os.path.join(out_dir, f"{prefix}_blocking.xlsx")
+    md_path = os.path.join(out_dir, f"{prefix}_blocking_report.md")
+
+    if df.empty:
+        md = [
+            "# Blocking Report (from XEL)",
+            "",
+            f"- Created: {created}",
+            f"- Source XEL: `{source_xel}`",
+            "",
+            "No blocked_process_report events found.",
+        ]
+        with open(md_path, "w", encoding="utf-8") as f:
+            f.write("\n".join(md))
+        return {"md": md_path}
+
+    df_sorted = df.sort_values(["duration_sec"], ascending=False, na_position="last")
+
+    by_blocked = df.groupby("blocked_spid")["duration_sec"].agg(["count", "mean", "max"]).sort_values("count", ascending=False)
+    by_blocking = df.groupby("blocking_spid")["duration_sec"].agg(["count", "mean", "max"]).sort_values("count", ascending=False)
+
+    by_blocked_table = df["blocked_table_guess"].value_counts().head(50)
+    by_blocking_table = df["blocking_table_guess"].value_counts().head(50)
+
+    by_db = df["database_name"].value_counts().head(50)
+    by_lock = df["lock_mode"].value_counts().head(50)
+
+    with pd.ExcelWriter(xlsx_path, engine="openpyxl") as w:
+        df_sorted.to_excel(w, sheet_name="Events", index=False)
+        df_sorted.head(100).to_excel(w, sheet_name="Top100_Duration", index=False)
+        by_blocked.reset_index().to_excel(w, sheet_name="ByBlockedSpid", index=False)
+        by_blocking.reset_index().to_excel(w, sheet_name="ByBlockingSpid", index=False)
+        by_db.reset_index(name="count").to_excel(w, sheet_name="ByDatabase", index=False)
+        by_lock.reset_index(name="count").to_excel(w, sheet_name="ByLockMode", index=False)
+        by_blocked_table.reset_index(name="count").to_excel(w, sheet_name="Blocked_Table_Guess", index=False)
+        by_blocking_table.reset_index(name="count").to_excel(w, sheet_name="Blocking_Table_Guess", index=False)
+
+    md: List[str] = []
+    md.append("# Blocking Report (from XEL)")
+    md.append("")
+    md.append(f"- Created: {created}")
+    md.append(f"- Source XEL: `{source_xel}`")
+    md.append(f"- Events: {len(df)} (blocked_process_report)")
+    md.append(f"- Output: `{os.path.basename(xlsx_path)}`")
+    md.append("")
+
+    # Quick highlights
+    top_duration = df_sorted["duration_sec"].dropna().head(1)
+    if len(top_duration) == 1:
+        md.append(f"- Max duration: **{float(top_duration.iloc[0]):.3f}s**")
+    if len(by_blocking) > 0:
+        top_blocker = by_blocking.reset_index().iloc[0]
+        md.append(f"- Top blocking SPID: **{top_blocker['blocking_spid']}** (count={int(top_blocker['count'])})")
+    md.append("")
+
+    def md_table(title: str, header: str, rows_: List[str]):
+        md.append(f"## {title}")
+        md.append("")
+        md.append(header)
+        md.append("---|---:")
+        md.extend(rows_)
+        md.append("")
+
+    md_table(
+        "Blocked table (guess) top 15",
+        "table | count",
+        [f"{k} | {v}" for k, v in df["blocked_table_guess"].value_counts().head(15).items() if str(k).strip() and k != "None"],
+    )
+
+    md_table(
+        "Blocking SPID top 15",
+        "spid | count",
+        [f"{k} | {v}" for k, v in df["blocking_spid"].value_counts().head(15).items() if str(k).strip() and k != "None"],
+    )
+
+    md.append("## Top 10 events (by duration)")
+    md.append("")
+    md.append("duration_sec | db | blocked_spid | blocking_spid | lock_mode | waitresource")
+    md.append("---:|---|---:|---:|---|---")
+    for _, r in df_sorted.head(10).iterrows():
+        waitres = str(r.get('waitresource', '') or '').replace("\n", " ")[:80]
+        md.append(
+            f"{(r.get('duration_sec') or 0):.3f} | {r.get('database_name','')} | {r.get('blocked_spid','')} | {r.get('blocking_spid','')} | {r.get('lock_mode','')} | {waitres}"
+        )
+    md.append("")
+
+    out_path = md_path
+    with open(out_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(md))
+
+    return {"md": md_path, "xlsx": xlsx_path}

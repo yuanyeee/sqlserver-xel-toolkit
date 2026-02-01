@@ -20,5 +20,6 @@ reports/
 *.json
 *.jsonl
 *.csv
+*.xlsx
 *.md
 !README.md

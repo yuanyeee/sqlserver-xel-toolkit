@@ -6,10 +6,12 @@ from datetime import datetime
 
 from toolkit.deadlock_report import generate_deadlock_report_from_jsonl
 from toolkit.slowquery_report import generate_slowquery_reports_from_jsonl
+from toolkit.blocking_report import generate_blocking_reports_from_jsonl
 
 
 def main():
     ap = argparse.ArgumentParser(description="Generate reports from XEL JSONL exports")
+    ap.add_argument("--blocking-jsonl", help="JSONL exported from blocked_process_report")
     ap.add_argument("--deadlock-jsonl", help="JSONL exported from xml_deadlock_report")
     ap.add_argument("--slowquery-jsonl", help="JSONL exported from rpc_completed/sql_batch_completed")
     ap.add_argument("--out", default="reports", help="Output directory")
@@ -21,6 +23,15 @@ def main():
     os.makedirs(args.out, exist_ok=True)
 
     outputs = []
+
+    if args.blocking_jsonl:
+        out = generate_blocking_reports_from_jsonl(
+            args.blocking_jsonl,
+            out_dir=args.out,
+            source_xel=args.source_xel,
+            prefix=args.prefix,
+        )
+        outputs.extend(out.values())
 
     if args.deadlock_jsonl:
         out = generate_deadlock_report_from_jsonl(
