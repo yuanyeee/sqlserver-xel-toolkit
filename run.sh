@@ -112,7 +112,17 @@ run_one() {
 
   # Deadlock
   if [[ "$base" == *deadlock* ]]; then
+    local RUN_TAG
+    RUN_TAG="$(date +%Y%m%d_%H%M%S)"
     "$DOTNET" run --project "$REPO_ROOT/src/XelDump" -- "$xel" --export-jsonl "$OUT_DIR/tmp/${prefix}_deadlock.jsonl" --filter xml_deadlock_report >/dev/null
+
+    # Generate per-event MD into inputMD (workspace-aware)
+    local WS
+    WS="${XEL_TOOLKIT_WORKSPACE:-}"
+    if [[ -n "$WS" ]]; then
+      python3 "$REPO_ROOT/py/xel_to_md.py" --jsonl "$OUT_DIR/tmp/${prefix}_deadlock.jsonl" --out "$WS/inputMD/$safe_base" --run-tag "$RUN_TAG" --event xml_deadlock_report --source "$xel" ${START_JST:+--start "$START_JST"} ${END_JST:+--end "$END_JST"} >/dev/null
+    fi
+
     python3 "$REPO_ROOT/py/generate_reports.py" \
       --deadlock-jsonl "$OUT_DIR/tmp/${prefix}_deadlock.jsonl" \
       --source-xel "$xel" \
@@ -124,7 +134,19 @@ run_one() {
 
   # Slow queries
   if [[ "$base" == *Slow_Queries* || "$base" == *slow* ]]; then
+    local RUN_TAG
+    RUN_TAG="$(date +%Y%m%d_%H%M%S)"
     "$DOTNET" run --project "$REPO_ROOT/src/XelDump" -- "$xel" --export-jsonl "$OUT_DIR/tmp/${prefix}_slow.jsonl" >/dev/null
+
+    # Generate per-event MD into inputMD (workspace-aware)
+    local WS
+    WS="${XEL_TOOLKIT_WORKSPACE:-}"
+    if [[ -n "$WS" ]]; then
+      # includes both rpc_completed and sql_batch_completed
+      python3 "$REPO_ROOT/py/xel_to_md.py" --jsonl "$OUT_DIR/tmp/${prefix}_slow.jsonl" --out "$WS/inputMD/$safe_base" --run-tag "$RUN_TAG" --event rpc_completed --source "$xel" ${START_JST:+--start "$START_JST"} ${END_JST:+--end "$END_JST"} >/dev/null
+      python3 "$REPO_ROOT/py/xel_to_md.py" --jsonl "$OUT_DIR/tmp/${prefix}_slow.jsonl" --out "$WS/inputMD/$safe_base" --run-tag "$RUN_TAG" --event sql_batch_completed --source "$xel" ${START_JST:+--start "$START_JST"} ${END_JST:+--end "$END_JST"} >/dev/null
+    fi
+
     python3 "$REPO_ROOT/py/generate_reports.py" \
       --slowquery-jsonl "$OUT_DIR/tmp/${prefix}_slow.jsonl" \
       --slow-threshold "$SLOW_THRESHOLD" \
@@ -137,7 +159,17 @@ run_one() {
 
   # Blocking
   if [[ "$base" == *blocking* ]]; then
+    local RUN_TAG
+    RUN_TAG="$(date +%Y%m%d_%H%M%S)"
     "$DOTNET" run --project "$REPO_ROOT/src/XelDump" -- "$xel" --export-jsonl "$OUT_DIR/tmp/${prefix}_blocking.jsonl" --filter blocked_process_report >/dev/null
+
+    # Generate per-event MD into inputMD (workspace-aware)
+    local WS
+    WS="${XEL_TOOLKIT_WORKSPACE:-}"
+    if [[ -n "$WS" ]]; then
+      python3 "$REPO_ROOT/py/xel_to_md.py" --jsonl "$OUT_DIR/tmp/${prefix}_blocking.jsonl" --out "$WS/inputMD/$safe_base" --run-tag "$RUN_TAG" --event blocked_process_report --source "$xel" ${START_JST:+--start "$START_JST"} ${END_JST:+--end "$END_JST"} >/dev/null
+    fi
+
     python3 "$REPO_ROOT/py/generate_reports.py" \
       --blocking-jsonl "$OUT_DIR/tmp/${prefix}_blocking.jsonl" \
       --source-xel "$xel" \
