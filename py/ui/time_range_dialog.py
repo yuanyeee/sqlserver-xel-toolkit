@@ -75,7 +75,7 @@ class TimeRangeDialog(QDialog):
 
         left.addWidget(QLabel("選択した日付"))
         self.date_list = QListWidget()
-        self.date_list.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.date_list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         left.addWidget(self.date_list)
 
         date_btns = QHBoxLayout()
@@ -100,6 +100,7 @@ class TimeRangeDialog(QDialog):
         right = QVBoxLayout()
         right.addWidget(QLabel("時間帯一覧"))
         self.list = QListWidget()
+        self.list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         right.addWidget(self.list)
 
         top.addLayout(right, 4)
@@ -170,12 +171,20 @@ class TimeRangeDialog(QDialog):
 
     def remove_selected_dates(self):
         rows = sorted({i.row() for i in self.date_list.selectedIndexes()}, reverse=True)
+        if not rows:
+            return
+        if QMessageBox.question(self, "確認", f"{len(rows)} 件の日付を削除しますか？") != QMessageBox.StandardButton.Yes:
+            return
         for r in rows:
             if 0 <= r < len(self.selected_dates):
                 self.selected_dates.pop(r)
         self.refresh_dates()
 
     def clear_dates(self):
+        if not self.selected_dates:
+            return
+        if QMessageBox.question(self, "確認", "選択した日付をすべてクリアしますか？") != QMessageBox.StandardButton.Yes:
+            return
         self.selected_dates = []
         self.refresh_dates()
 
@@ -218,13 +227,21 @@ class TimeRangeDialog(QDialog):
         self.refresh()
 
     def delete_selected(self):
-        idx = self.list.currentRow()
-        if idx < 0:
+        rows = sorted({i.row() for i in self.list.selectedIndexes()}, reverse=True)
+        if not rows:
             return
-        self.items.pop(idx)
+        if QMessageBox.question(self, "確認", f"{len(rows)} 件を削除しますか？") != QMessageBox.StandardButton.Yes:
+            return
+        for r in rows:
+            if 0 <= r < len(self.items):
+                self.items.pop(r)
         self.refresh()
 
     def clear_all(self):
+        if not self.items:
+            return
+        if QMessageBox.question(self, "確認", "すべての時間帯を削除しますか？") != QMessageBox.StandardButton.Yes:
+            return
         self.items = []
         self.refresh()
 
