@@ -97,10 +97,10 @@ run_one() {
       local INPUTMD
       INPUTMD="$WS/inputMD/$safe_base"
       mkdir -p "$INPUTMD"
-      python3 "$REPO_ROOT/py/csv_excel_to_md.py" --in "$xel" --out "$INPUTMD" --run-tag "$RUN_TAG" >/dev/null
+      python3 "$REPO_ROOT/py/csv_excel_to_md.py" --in "$xel" --out "$INPUTMD" --run-tag "$RUN_TAG" ${XEL_TOOLKIT_RANGES_JSON:+--ranges-json "$XEL_TOOLKIT_RANGES_JSON"} >/dev/null
     else
       mkdir -p "$FILE_OUT/md"
-      python3 "$REPO_ROOT/py/csv_excel_to_md.py" --in "$xel" --out "$FILE_OUT/md" --run-tag "$RUN_TAG" >/dev/null
+      python3 "$REPO_ROOT/py/csv_excel_to_md.py" --in "$xel" --out "$FILE_OUT/md" --run-tag "$RUN_TAG" ${XEL_TOOLKIT_RANGES_JSON:+--ranges-json "$XEL_TOOLKIT_RANGES_JSON"} >/dev/null
     fi
 
     echo "   Done (csv/excel->md): $base"
@@ -120,7 +120,7 @@ run_one() {
     local WS
     WS="${XEL_TOOLKIT_WORKSPACE:-}"
     if [[ -n "$WS" ]]; then
-      python3 "$REPO_ROOT/py/xel_to_md.py" --jsonl "$OUT_DIR/tmp/${prefix}_deadlock.jsonl" --out "$WS/inputMD/$safe_base" --key "$KEY" --event xml_deadlock_report --source "$xel" ${START_JST:+--start "$START_JST"} ${END_JST:+--end "$END_JST"} >/dev/null
+      python3 "$REPO_ROOT/py/xel_to_md.py" --jsonl "$OUT_DIR/tmp/${prefix}_deadlock.jsonl" --out "$WS/inputMD/$safe_base" --key "$KEY" --event xml_deadlock_report --source "$xel" ${START_JST:+--start "$START_JST"} ${END_JST:+--end "$END_JST"} ${XEL_TOOLKIT_RANGES_JSON:+--ranges-json "$XEL_TOOLKIT_RANGES_JSON"} >/dev/null
     fi
 
     python3 "$REPO_ROOT/py/generate_reports.py" \
@@ -129,7 +129,8 @@ run_one() {
       --prefix "$prefix" \
       --out "$FILE_OUT" \
       ${START_JST:+--start "$START_JST"} \
-      ${END_JST:+--end "$END_JST"} >/dev/null
+      ${END_JST:+--end "$END_JST"} \
+      ${XEL_TOOLKIT_RANGES_JSON:+--ranges-json "$XEL_TOOLKIT_RANGES_JSON"} >/dev/null
   fi
 
   # Slow queries
@@ -143,8 +144,8 @@ run_one() {
     WS="${XEL_TOOLKIT_WORKSPACE:-}"
     if [[ -n "$WS" ]]; then
       # includes both rpc_completed and sql_batch_completed
-      python3 "$REPO_ROOT/py/xel_to_md.py" --jsonl "$OUT_DIR/tmp/${prefix}_slow.jsonl" --out "$WS/inputMD/$safe_base" --key "$KEY" --event rpc_completed --source "$xel" ${START_JST:+--start "$START_JST"} ${END_JST:+--end "$END_JST"} >/dev/null
-      python3 "$REPO_ROOT/py/xel_to_md.py" --jsonl "$OUT_DIR/tmp/${prefix}_slow.jsonl" --out "$WS/inputMD/$safe_base" --key "$KEY" --event sql_batch_completed --source "$xel" ${START_JST:+--start "$START_JST"} ${END_JST:+--end "$END_JST"} >/dev/null
+      python3 "$REPO_ROOT/py/xel_to_md.py" --jsonl "$OUT_DIR/tmp/${prefix}_slow.jsonl" --out "$WS/inputMD/$safe_base" --key "$KEY" --event rpc_completed --source "$xel" ${START_JST:+--start "$START_JST"} ${END_JST:+--end "$END_JST"} ${XEL_TOOLKIT_RANGES_JSON:+--ranges-json "$XEL_TOOLKIT_RANGES_JSON"} >/dev/null
+      python3 "$REPO_ROOT/py/xel_to_md.py" --jsonl "$OUT_DIR/tmp/${prefix}_slow.jsonl" --out "$WS/inputMD/$safe_base" --key "$KEY" --event sql_batch_completed --source "$xel" ${START_JST:+--start "$START_JST"} ${END_JST:+--end "$END_JST"} ${XEL_TOOLKIT_RANGES_JSON:+--ranges-json "$XEL_TOOLKIT_RANGES_JSON"} >/dev/null
     fi
 
     python3 "$REPO_ROOT/py/generate_reports.py" \
@@ -154,7 +155,8 @@ run_one() {
       --prefix "$prefix" \
       --out "$FILE_OUT" \
       ${START_JST:+--start "$START_JST"} \
-      ${END_JST:+--end "$END_JST"} >/dev/null
+      ${END_JST:+--end "$END_JST"} \
+      ${XEL_TOOLKIT_RANGES_JSON:+--ranges-json "$XEL_TOOLKIT_RANGES_JSON"} >/dev/null
   fi
 
   # Blocking
@@ -167,7 +169,7 @@ run_one() {
     local WS
     WS="${XEL_TOOLKIT_WORKSPACE:-}"
     if [[ -n "$WS" ]]; then
-      python3 "$REPO_ROOT/py/xel_to_md.py" --jsonl "$OUT_DIR/tmp/${prefix}_blocking.jsonl" --out "$WS/inputMD/$safe_base" --key "$KEY" --event blocked_process_report --source "$xel" ${START_JST:+--start "$START_JST"} ${END_JST:+--end "$END_JST"} >/dev/null
+      python3 "$REPO_ROOT/py/xel_to_md.py" --jsonl "$OUT_DIR/tmp/${prefix}_blocking.jsonl" --out "$WS/inputMD/$safe_base" --key "$KEY" --event blocked_process_report --source "$xel" ${START_JST:+--start "$START_JST"} ${END_JST:+--end "$END_JST"} ${XEL_TOOLKIT_RANGES_JSON:+--ranges-json "$XEL_TOOLKIT_RANGES_JSON"} >/dev/null
     fi
 
     python3 "$REPO_ROOT/py/generate_reports.py" \
@@ -176,7 +178,8 @@ run_one() {
       --prefix "$prefix" \
       --out "$FILE_OUT" \
       ${START_JST:+--start "$START_JST"} \
-      ${END_JST:+--end "$END_JST"} >/dev/null
+      ${END_JST:+--end "$END_JST"} \
+      ${XEL_TOOLKIT_RANGES_JSON:+--ranges-json "$XEL_TOOLKIT_RANGES_JSON"} >/dev/null
   fi
 
   echo "   Done: $prefix"

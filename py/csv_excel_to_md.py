@@ -67,6 +67,7 @@ def main():
     ap.add_argument("--sheet", help="Excel sheet name (optional)")
     ap.add_argument("--limit", type=int, default=0, help="Limit rows (0=all)")
     ap.add_argument("--run-tag", help="Unique run tag, e.g. 20260201_2105")
+    ap.add_argument("--ranges-json", help="Optional ranges.json path (OR filter)")
     args = ap.parse_args()
 
     inp = os.path.expanduser(args.inp)
@@ -80,6 +81,37 @@ def main():
 
     df = df.copy()
     time_col = _guess_time_col(df.columns)
+
+    # Optional OR time-range filtering (JST, minute precision). If time column has no TZ, treat as JST.
+    ranges_path = args.ranges_json or os.environ.get("XEL_TOOLKIT_RANGES_JSON")
+    ranges = []
+    if ranges_path and os.path.exists(ranges_path):
+        try:
+            from toolkit.ranges import load_ranges_json, in_any_range
+            from zoneinfo import ZoneInfo
+
+            ranges = load_ranges_json(ranges_path)
+        except Exception:
+            ranges = []
+
+    if ranges and time_col:
+        def _keep(v):
+            dt = _parse_dt(v)
+            if not dt:
+                return False
+            # treat naive as JST
+            try:
+                from zoneinfo import ZoneInfo
+                jst = ZoneInfo('Asia/Tokyo')
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=jst)
+                else:
+                    dt = dt.astimezone(jst)
+            except Exception:
+                pass
+            return in_any_range(dt, ranges)
+
+        df = df[df[time_col].apply(_keep)]
 
     if args.limit and args.limit > 0:
         df = df.head(args.limit)

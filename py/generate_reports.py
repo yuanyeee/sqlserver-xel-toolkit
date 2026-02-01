@@ -20,6 +20,7 @@ def main():
     ap.add_argument("--prefix", required=True, help="Output filename prefix (base)")
     ap.add_argument("--start", help="JST start time (YYYY-mm-dd HH:MM)")
     ap.add_argument("--end", help="JST end time (YYYY-mm-dd HH:MM)")
+    ap.add_argument("--ranges-json", help="Optional ranges.json path (OR filter)")
     ap.add_argument("--slow-threshold", type=float, default=3.0, help="Slow query threshold seconds (default: 3.0)")
 
     args = ap.parse_args()
@@ -27,6 +28,13 @@ def main():
 
     start_jst = parse_jst_minute(args.start) if getattr(args, 'start', None) else None
     end_jst = parse_jst_minute(args.end) if getattr(args, 'end', None) else None
+
+    ranges = []
+    ranges_path = getattr(args, 'ranges_json', None) or os.environ.get("XEL_TOOLKIT_RANGES_JSON")
+    if ranges_path:
+        from toolkit.ranges import load_ranges_json
+
+        ranges = load_ranges_json(ranges_path)
 
     outputs = []
 
@@ -38,6 +46,7 @@ def main():
             prefix_base=args.prefix,
             start_jst=start_jst,
             end_jst=end_jst,
+            ranges=ranges,
         )
         outputs.extend(out.values())
 
@@ -49,6 +58,7 @@ def main():
             prefix_base=args.prefix,
             start_jst=start_jst,
             end_jst=end_jst,
+            ranges=ranges,
         )
         outputs.append(out)
 
@@ -61,6 +71,7 @@ def main():
             threshold_sec=args.slow_threshold,
             start_jst=start_jst,
             end_jst=end_jst,
+            ranges=ranges,
         )
         outputs.extend(out.values())
 

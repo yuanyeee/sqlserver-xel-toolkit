@@ -46,6 +46,7 @@ def main():
     ap.add_argument("--source", required=True, help="Source XEL file name (for metadata)")
     ap.add_argument("--start", help='JST start time "YYYY-mm-dd HH:MM" (optional)')
     ap.add_argument("--end", help='JST end time "YYYY-mm-dd HH:MM" (optional)')
+    ap.add_argument("--ranges-json", help="Optional ranges.json path (OR filter)")
     ap.add_argument("--limit", type=int, default=0, help="Max events (0=all)")
 
     args = ap.parse_args()
@@ -60,12 +61,27 @@ def main():
     start_jst = parse_jst_minute(args.start) if args.start else None
     end_jst = parse_jst_minute(args.end) if args.end else None
 
+    ranges = []
+    ranges_path = args.ranges_json or os.environ.get("XEL_TOOLKIT_RANGES_JSON")
+    if ranges_path:
+        try:
+            from toolkit.ranges import load_ranges_json
+
+            ranges = load_ranges_json(ranges_path)
+        except Exception:
+            ranges = []
+
     count = 0
     for i, ev in enumerate(iter_events(args.jsonl, event_name=event), 1):
         dt = parse_iso(ev.timestamp or "")
         if dt is not None:
             if not in_range(dt, start_jst, end_jst):
                 continue
+            if ranges:
+                from toolkit.ranges import in_any_range
+
+                if not in_any_range(dt, ranges):
+                    continue
             jst = to_jst(dt)
             date_part = jst.strftime("%Y%m%d")
             dt_display = jst.strftime("%Y-%m-%d %H:%M:%S%z")

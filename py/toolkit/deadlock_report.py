@@ -79,6 +79,7 @@ def generate_deadlock_report_from_jsonl(
     prefix_base: str,
     start_jst=None,
     end_jst=None,
+    ranges=None,
 ) -> str:
     """Generate a Markdown report from exported xml_deadlock_report events.
 
@@ -97,6 +98,11 @@ def generate_deadlock_report_from_jsonl(
         if dt is not None:
             if not in_range(dt, start_jst, end_jst):
                 continue
+            if ranges:
+                from .ranges import in_any_range
+
+                if not in_any_range(dt, ranges):
+                    continue
             r = merge_range(r, dt)
 
         try:

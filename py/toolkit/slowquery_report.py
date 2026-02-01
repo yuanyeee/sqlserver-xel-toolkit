@@ -53,6 +53,7 @@ def generate_slowquery_reports_from_jsonl(
     threshold_sec: float = 3.0,
     start_jst=None,
     end_jst=None,
+    ranges=None,
 ) -> Dict[str, str]:
     rows: List[Dict[str, Any]] = []
     r = (None, None)
@@ -65,6 +66,11 @@ def generate_slowquery_reports_from_jsonl(
         if dt is not None:
             if not in_range(dt, start_jst, end_jst):
                 continue
+            if ranges:
+                from .ranges import in_any_range
+
+                if not in_any_range(dt, ranges):
+                    continue
 
         fields = ev.fields
         actions = ev.actions
