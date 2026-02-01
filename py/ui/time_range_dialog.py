@@ -5,7 +5,7 @@ import os
 from dataclasses import dataclass
 from typing import List
 
-from PyQt5.QtWidgets import (
+from PySide6.QtWidgets import (
     QDialog,
     QFormLayout,
     QHBoxLayout,

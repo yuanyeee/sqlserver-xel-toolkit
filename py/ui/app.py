@@ -6,11 +6,12 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import List, Optional
 
-from PyQt5.QtCore import Qt, QThread, pyqtSignal
-from PyQt5.QtWidgets import (
+from ._qt import (
+    Qt,
+    QThread,
+    Signal,
     QApplication,
     QFileDialog,
-    QHBoxLayout,
     QLabel,
     QLineEdit,
     QListWidget,
@@ -52,9 +53,9 @@ class WorkspaceState:
 
 
 class RunWorker(QThread):
-    log = pyqtSignal(str)
-    finished_ok = pyqtSignal(str)
-    finished_err = pyqtSignal(str)
+    log = Signal(str)
+    finished_ok = Signal(str)
+    finished_err = Signal(str)
 
     def __init__(self, repo_root: str, xel_paths: List[str], out_dir: str, slow_threshold: float, workspace_root: Optional[str], ranges_path: Optional[str]):
         super().__init__()
@@ -289,7 +290,7 @@ class MainWindow(QMainWindow):
         path = self._ranges_path()
         assert path
         dlg = TimeRangeDialog(path, self)
-        dlg.exec_()
+        dlg.exec()
 
     def open_integratedtool(self):
         it_dir = os.path.join(self.repo_root, "integratedtool")
@@ -409,7 +410,7 @@ def main():
     app = QApplication([])
     w = MainWindow()
     w.show()
-    app.exec_()
+    app.exec()
 
 
 if __name__ == "__main__":
