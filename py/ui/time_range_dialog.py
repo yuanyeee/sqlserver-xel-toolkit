@@ -5,7 +5,10 @@ import os
 from dataclasses import dataclass
 from typing import List
 
+from PySide6.QtCore import Qt, QDate
 from PySide6.QtWidgets import (
+    QAbstractItemView,
+    QCalendarWidget,
     QDialog,
     QFormLayout,
     QHBoxLayout,
@@ -52,16 +55,56 @@ class TimeRangeDialog(QDialog):
     def __init__(self, ranges_path: str, parent=None):
         super().__init__(parent)
         self.setWindowTitle("出力時間範囲")
-        self.resize(560, 380)
+        self.resize(860, 520)
 
         self.ranges_path = ranges_path
         self.items: List[RangeItem] = load_ranges(ranges_path)
 
-        layout = QVBoxLayout(self)
-        layout.addWidget(QLabel("複数の時間帯を追加できます（JST / 分単位）。\n例: 2026-01-05 08:00 〜 2026-01-05 17:00"))
+        self.selected_dates: List[QDate] = []
 
+        layout = QVBoxLayout(self)
+        layout.addWidget(QLabel("複数の時間帯を追加できます（JST / 分単位）。\n日付はカレンダーから複数選択できます。"))
+
+        top = QHBoxLayout()
+
+        # Left: calendar + selected date list
+        left = QVBoxLayout()
+        self.calendar = QCalendarWidget()
+        self.calendar.setGridVisible(True)
+        left.addWidget(self.calendar)
+
+        left.addWidget(QLabel("選択した日付"))
+        self.date_list = QListWidget()
+        self.date_list.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        left.addWidget(self.date_list)
+
+        date_btns = QHBoxLayout()
+        btn_add_date = QPushButton("追加")
+        btn_add_date.clicked.connect(self.add_selected_date)
+        date_btns.addWidget(btn_add_date)
+
+        btn_del_date = QPushButton("削除")
+        btn_del_date.clicked.connect(self.remove_selected_dates)
+        date_btns.addWidget(btn_del_date)
+
+        btn_clear_dates = QPushButton("日付クリア")
+        btn_clear_dates.clicked.connect(self.clear_dates)
+        date_btns.addWidget(btn_clear_dates)
+
+        date_btns.addStretch(1)
+        left.addLayout(date_btns)
+
+        top.addLayout(left, 3)
+
+        # Right: ranges list + manual editor
+        right = QVBoxLayout()
+        right.addWidget(QLabel("時間帯一覧"))
         self.list = QListWidget()
-        layout.addWidget(self.list)
+        right.addWidget(self.list)
+
+        top.addLayout(right, 4)
+
+        layout.addLayout(top)
 
         form = QFormLayout()
         self.start_edit = QLineEdit()
@@ -76,22 +119,22 @@ class TimeRangeDialog(QDialog):
         quick.addWidget(QLabel("テンプレ:"))
 
         btn1 = QPushButton("08:00-17:00")
-        btn1.clicked.connect(lambda: self._apply_template("08:00", "17:00"))
+        btn1.clicked.connect(lambda: self.apply_template_to_dates("08:00", "17:00"))
         quick.addWidget(btn1)
 
         btn2 = QPushButton("07:00-21:00")
-        btn2.clicked.connect(lambda: self._apply_template("07:00", "21:00"))
+        btn2.clicked.connect(lambda: self.apply_template_to_dates("07:00", "21:00"))
         quick.addWidget(btn2)
+
+        btn_manual = QPushButton("入力で追加")
+        btn_manual.clicked.connect(self.add_item)
+        quick.addWidget(btn_manual)
 
         quick.addStretch(1)
         layout.addLayout(quick)
 
         btns = QHBoxLayout()
-        self.btn_add = QPushButton("追加")
-        self.btn_add.clicked.connect(self.add_item)
-        btns.addWidget(self.btn_add)
-
-        self.btn_del = QPushButton("削除")
+        self.btn_del = QPushButton("選択削除")
         self.btn_del.clicked.connect(self.delete_selected)
         btns.addWidget(self.btn_del)
 
@@ -113,26 +156,48 @@ class TimeRangeDialog(QDialog):
 
         self.refresh()
 
-    def _apply_template(self, start_hm: str, end_hm: str):
-        # If user already typed a date, keep it.
-        s = self.start_edit.text().strip()
-        e = self.end_edit.text().strip()
-        if len(s) >= 10:
-            date = s[:10]
-            self.start_edit.setText(f"{date} {start_hm}")
-        if len(e) >= 10:
-            date = e[:10]
-            self.end_edit.setText(f"{date} {end_hm}")
-        # If empty, just fill time portion (user will add date)
-        if not self.start_edit.text().strip():
-            self.start_edit.setText(f"YYYY-mm-dd {start_hm}")
-        if not self.end_edit.text().strip():
-            self.end_edit.setText(f"YYYY-mm-dd {end_hm}")
+    def add_selected_date(self):
+        d = self.calendar.selectedDate()
+        if d not in self.selected_dates:
+            self.selected_dates.append(d)
+            self.selected_dates.sort(key=lambda x: x.toJulianDay())
+            self.refresh_dates()
+
+    def refresh_dates(self):
+        self.date_list.clear()
+        for d in self.selected_dates:
+            self.date_list.addItem(QListWidgetItem(d.toString("yyyy-MM-dd")))
+
+    def remove_selected_dates(self):
+        rows = sorted({i.row() for i in self.date_list.selectedIndexes()}, reverse=True)
+        for r in rows:
+            if 0 <= r < len(self.selected_dates):
+                self.selected_dates.pop(r)
+        self.refresh_dates()
+
+    def clear_dates(self):
+        self.selected_dates = []
+        self.refresh_dates()
+
+    def apply_template_to_dates(self, start_hm: str, end_hm: str):
+        if not self.selected_dates:
+            QMessageBox.warning(self, "日付", "カレンダーで日付を選択し、追加してください")
+            return
+        for d in self.selected_dates:
+            date = d.toString("yyyy-MM-dd")
+            s = f"{date} {start_hm}"
+            e = f"{date} {end_hm}"
+            if s >= e:
+                continue
+            self.items.append(RangeItem(start=s, end=e))
+        self.items.sort(key=lambda x: x.start)
+        self.refresh()
 
     def refresh(self):
         self.list.clear()
         for it in self.items:
             self.list.addItem(QListWidgetItem(f"{it.start} 〜 {it.end}"))
+        self.refresh_dates()
 
     def add_item(self):
         s = self.start_edit.text().strip()
