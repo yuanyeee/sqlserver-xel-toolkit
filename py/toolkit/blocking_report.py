@@ -250,12 +250,14 @@ def generate_blocking_reports_from_jsonl(
         )
 
     df = pd.DataFrame(rows)
-    df = _try_enrich_object_names(df, out_dir=out_dir, prefix=prefix)
 
     created = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     lo, hi = r
     tag = range_tag(lo, hi)
     prefix = f"{prefix_base}_{tag}"
+
+    # Optional SQL Server mapping uses prefix for temp filenames; prefix_base is sufficient and avoids ordering bugs.
+    df = _try_enrich_object_names(df, out_dir=out_dir, prefix=prefix_base)
     xlsx_path = os.path.join(out_dir, f"{prefix}_blocking.xlsx")
     md_path = os.path.join(out_dir, f"{prefix}_blocking_report.md")
 
