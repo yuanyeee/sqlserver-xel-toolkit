@@ -307,7 +307,11 @@ class MainWindow(QMainWindow):
                 rp = self._ranges_path()
                 if rp and os.path.exists(rp):
                     env["XEL_TOOLKIT_RANGES_JSON"] = rp
-            subprocess.Popen(["python3", entry], cwd=it_dir, env=env)
+            it_python = os.path.join(it_dir, ".venv", "bin", "python")
+            if os.path.exists(it_python):
+                subprocess.Popen([it_python, entry], cwd=it_dir, env=env)
+            else:
+                subprocess.Popen(["python3", entry], cwd=it_dir, env=env)
         except Exception as e:
             QMessageBox.critical(self, "IntegratedTool", str(e))
 
