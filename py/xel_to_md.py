@@ -41,7 +41,7 @@ def main():
     ap = argparse.ArgumentParser(description="Convert XEL JSONL exports to per-event Markdown files")
     ap.add_argument("--jsonl", required=True, help="Input JSONL (from XelDump --export-jsonl)")
     ap.add_argument("--out", required=True, help="Output root folder")
-    ap.add_argument("--run-tag", required=True, help="Run tag for uniqueness (YYYYmmdd_HHMMSS)")
+    ap.add_argument("--key", required=True, help="Unique key (short hash) for this import batch")
     ap.add_argument("--event", required=True, help="Event name (e.g. blocked_process_report)")
     ap.add_argument("--source", required=True, help="Source XEL file name (for metadata)")
     ap.add_argument("--start", help='JST start time "YYYY-mm-dd HH:MM" (optional)')
@@ -51,7 +51,7 @@ def main():
     args = ap.parse_args()
 
     out_root = os.path.expanduser(args.out)
-    run_tag = args.run_tag
+    key = args.key
     event = args.event
 
     # Parse optional JST range (reuse toolkit.timeutil parser)
@@ -73,8 +73,8 @@ def main():
             date_part = "unknown"
             dt_display = ev.timestamp or ""
 
-        folder = os.path.join(out_root, run_tag, date_part)
-        filename = f"{date_part}_{run_tag}_{event}_{i}.md"
+        folder = os.path.join(out_root, date_part)
+        filename = f"{date_part}_{key}_{event}_{i}.md"
         path = os.path.join(folder, filename)
 
         # Flatten fields/actions
@@ -119,9 +119,10 @@ def main():
 
     # index
     os.makedirs(out_root, exist_ok=True)
-    with open(os.path.join(out_root, run_tag, "index.md"), "w", encoding="utf-8") as f:
+    with open(os.path.join(out_root, f"index_{key}_{event}.md"), "w", encoding="utf-8") as f:
         f.write(f"# XEL MD index\n\n")
         f.write(f"Event: {event}\n\n")
+        f.write(f"Key: {key}\n\n")
         f.write(f"Generated at: {datetime.now():%Y-%m-%d %H:%M:%S}\n\n")
         f.write(f"Count: {count}\n")
 
