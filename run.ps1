@@ -1,12 +1,12 @@
-Set-StrictMode -Version Latest
-$ErrorActionPreference = 'Stop'
-
-# Windows runner equivalent to run.sh
-
 param(
   [Parameter(ValueFromRemainingArguments = $true)]
   [string[]]$Args
 )
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
+# Windows runner equivalent to run.sh
 
 $RepoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $OutDir = Join-Path $RepoRoot 'reports'
