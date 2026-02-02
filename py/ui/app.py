@@ -95,7 +95,7 @@ class RunWorker(QThread):
                     *self.xel_paths,
                     "-o",
                     self.out_dir,
-                    "--slow-threshold",
+                    "-SlowThresholdSec",
                     str(self.slow_threshold),
                 ]
             else:

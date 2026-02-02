@@ -1,6 +1,14 @@
 param(
-  [Parameter(ValueFromRemainingArguments = $true)]
-  [string[]]$Args
+  [Parameter(Position = 0, ValueFromRemainingArguments = $true)]
+  [string[]]$Inputs,
+
+  [Alias('o')]
+  [string]$OutDir = "",
+
+  [double]$SlowThresholdSec = 3.0,
+
+  [string]$Start = "",
+  [string]$End = ""
 )
 
 Set-StrictMode -Version Latest
@@ -9,41 +17,33 @@ $ErrorActionPreference = 'Stop'
 # Windows runner equivalent to run.sh
 
 $RepoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
-$OutDir = Join-Path $RepoRoot 'reports'
-$SlowThreshold = '3'
-$StartJst = ''
-$EndJst = ''
+if ([string]::IsNullOrWhiteSpace($OutDir)) {
+  $OutDir = Join-Path $RepoRoot 'reports'
+}
 
 function Usage {
   @'
 Usage:
-  .\run.ps1 <xel path|glob> [more xel ...] [-o OUT_DIR] [--slow-threshold SEC] [--start "YYYY-mm-dd HH:MM"] [--end "YYYY-mm-dd HH:MM"]
+  .\run.ps1 <xel path|glob> [more xel ...] [-o OUT_DIR] [-SlowThresholdSec SEC] [-Start "YYYY-mm-dd HH:MM"] [-End "YYYY-mm-dd HH:MM"]
+
+Notes:
+  - PowerShell scripts do not accept GNU-style options like --slow-threshold.
 '@
 }
 
-# Parse args (simple)
-$inputs = New-Object System.Collections.Generic.List[string]
-for ($i=0; $i -lt $Args.Count; $i++) {
-  $a = $Args[$i]
-  switch ($a) {
-    '-h' { Usage; exit 0 }
-    '--help' { Usage; exit 0 }
-    '-o' { $OutDir = $Args[$i+1]; $i++; break }
-    '--out' { $OutDir = $Args[$i+1]; $i++; break }
-    '--slow-threshold' { $SlowThreshold = $Args[$i+1]; $i++; break }
-    '--start' { $StartJst = $Args[$i+1]; $i++; break }
-    '--end' { $EndJst = $Args[$i+1]; $i++; break }
-    default { $inputs.Add($a) | Out-Null }
-  }
-}
-
-if ($inputs.Count -eq 0) {
+if (-not $Inputs -or $Inputs.Count -eq 0) {
   Usage
   exit 2
 }
 
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 New-Item -ItemType Directory -Force -Path (Join-Path $OutDir 'tmp') | Out-Null
+
+# keep variable names used by the existing implementation
+$inputs = $Inputs
+$SlowThreshold = [string]$SlowThresholdSec
+$StartJst = $Start
+$EndJst = $End
 
 function SafeBase([string]$s) {
   $safe = [regex]::Replace($s, '[^A-Za-z0-9._-]+', '_')

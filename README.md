@@ -108,7 +108,7 @@ macOS/Linux:
 
 Windows (PowerShell):
 ```powershell
-.\run.ps1 C:\Users\you\Downloads\blocking*.xel C:\Users\you\Downloads\deadlock*.xel C:\Users\you\Downloads\Slow_Queries*.xel -o .\reports --slow-threshold 3
+.\run.ps1 C:\Users\you\Downloads\blocking*.xel C:\Users\you\Downloads\deadlock*.xel C:\Users\you\Downloads\Slow_Queries*.xel -o .\reports -SlowThresholdSec 3
 ```
 
 出力先（例）:
