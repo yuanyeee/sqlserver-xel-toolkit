@@ -33,11 +33,21 @@ pip install -r py/requirements.txt
 
 ## IntegratedTool（サブモジュール）
 
-このリポジトリには `yuanyeee/IntegratedTool` を **git submodule** として同梱できます。
+このリポジトリには `yuanyeee/IntegratedTool` を **git submodule** として同梱しています。
 
-初回チェックアウト後は：
+初回チェックアウト後：
 ```bash
 git submodule update --init --recursive
+```
+
+### サブモジュールを最新に更新（ローカル作業用）
+```bash
+./scripts/update_integratedtool.sh
+```
+
+### コンパイルなしで起動（uv）
+```bash
+./scripts/run_integratedtool_uv.sh
 ```
 
 GUI の `Open IntegratedTool` ボタンから `unified_report_viewer.py` を起動できます。
