@@ -21,6 +21,42 @@ if ([string]::IsNullOrWhiteSpace($OutDir)) {
   $OutDir = Join-Path $RepoRoot 'reports'
 }
 
+function Find-DotNet {
+  $cmd = Get-Command dotnet -ErrorAction SilentlyContinue
+  if ($cmd) { return $cmd.Source }
+  $candidates = @(
+    Join-Path $env:ProgramFiles 'dotnet\dotnet.exe',
+    Join-Path ${env:ProgramFiles(x86)} 'dotnet\dotnet.exe'
+  )
+  foreach ($p in $candidates) {
+    if ($p -and (Test-Path $p)) { return $p }
+  }
+  return $null
+}
+
+function Find-Python {
+  $cmd = Get-Command python -ErrorAction SilentlyContinue
+  if ($cmd) { return @($cmd.Source) }
+  $py = Get-Command py -ErrorAction SilentlyContinue
+  if ($py) { return @($py.Source, '-3') }
+  return $null
+}
+
+$DotNetExe = Find-DotNet
+if (-not $DotNetExe) {
+  throw "dotnet not found. Install .NET SDK (x64) and restart PowerShell: https://dotnet.microsoft.com/download"
+}
+
+$PyCmd = Find-Python
+if (-not $PyCmd) {
+  throw "python not found. Install Python 3 and ensure it's on PATH (or install the Python launcher 'py')."
+}
+
+function Invoke-Python {
+  param([Parameter(ValueFromRemainingArguments=$true)][string[]]$A)
+  & $PyCmd[0] $PyCmd[1..($PyCmd.Length-1)] @A
+}
+
 function Usage {
   @'
 Usage:
@@ -81,27 +117,27 @@ function RunOne([string]$path) {
       New-Item -ItemType Directory -Force -Path $inputMd | Out-Null
       $cmd = @('python', (Join-Path $RepoRoot 'py/csv_excel_to_md.py'), '--in', $path, '--out', $inputMd, '--run-tag', $runTag)
       if ($env:XEL_TOOLKIT_RANGES_JSON) { $cmd += @('--ranges-json', $env:XEL_TOOLKIT_RANGES_JSON) }
-      & $cmd[0] $cmd[1..($cmd.Count-1)] | Out-Null
+      Invoke-Python @($cmd[1..($cmd.Count-1)]) | Out-Null
     } else {
       $md = Join-Path $fileOut 'md'
       New-Item -ItemType Directory -Force -Path $md | Out-Null
       $cmd = @('python', (Join-Path $RepoRoot 'py/csv_excel_to_md.py'), '--in', $path, '--out', $md, '--run-tag', $runTag)
       if ($env:XEL_TOOLKIT_RANGES_JSON) { $cmd += @('--ranges-json', $env:XEL_TOOLKIT_RANGES_JSON) }
-      & $cmd[0] $cmd[1..($cmd.Count-1)] | Out-Null
+      Invoke-Python @($cmd[1..($cmd.Count-1)]) | Out-Null
     }
     Write-Host "   Done (csv/excel->md): $base"
     return
   }
 
   # XEL summary always
-  & dotnet run --project (Join-Path $RepoRoot 'src/XelDump') -- $path -o $fileOut --max 2000 | Out-Null
+  & $DotNetExe run --project (Join-Path $RepoRoot 'src/XelDump') -- $path -o $fileOut --max 2000 | Out-Null
 
   $tmpDir = Join-Path $OutDir 'tmp'
 
   if ($base -like '*deadlock*') {
     $key = Hash8 $prefix
     $jsonl = Join-Path $tmpDir ("${prefix}_deadlock.jsonl")
-    & dotnet run --project (Join-Path $RepoRoot 'src/XelDump') -- $path --export-jsonl $jsonl --filter xml_deadlock_report | Out-Null
+    & $DotNetExe run --project (Join-Path $RepoRoot 'src/XelDump') -- $path --export-jsonl $jsonl --filter xml_deadlock_report | Out-Null
 
     $ws = $env:XEL_TOOLKIT_WORKSPACE
     if (-not [string]::IsNullOrWhiteSpace($ws)) {
@@ -110,20 +146,20 @@ function RunOne([string]$path) {
       if ($StartJst) { $cmd += @('--start', $StartJst) }
       if ($EndJst) { $cmd += @('--end', $EndJst) }
       if ($env:XEL_TOOLKIT_RANGES_JSON) { $cmd += @('--ranges-json', $env:XEL_TOOLKIT_RANGES_JSON) }
-      & $cmd[0] $cmd[1..($cmd.Count-1)] | Out-Null
+      Invoke-Python @() | Out-Null
     }
 
     $cmd2 = @('python', (Join-Path $RepoRoot 'py/generate_reports.py'), '--deadlock-jsonl', $jsonl, '--source-xel', $path, '--prefix', $prefix, '--out', $fileOut)
     if ($StartJst) { $cmd2 += @('--start', $StartJst) }
     if ($EndJst) { $cmd2 += @('--end', $EndJst) }
     if ($env:XEL_TOOLKIT_RANGES_JSON) { $cmd2 += @('--ranges-json', $env:XEL_TOOLKIT_RANGES_JSON) }
-    & $cmd2[0] $cmd2[1..($cmd2.Count-1)] | Out-Null
+    Invoke-Python @() | Out-Null
   }
 
   if ($base -like '*Slow_Queries*' -or $base -like '*slow*') {
     $key = Hash8 $prefix
     $jsonl = Join-Path $tmpDir ("${prefix}_slow.jsonl")
-    & dotnet run --project (Join-Path $RepoRoot 'src/XelDump') -- $path --export-jsonl $jsonl | Out-Null
+    & $DotNetExe run --project (Join-Path $RepoRoot 'src/XelDump') -- $path --export-jsonl $jsonl | Out-Null
 
     $ws = $env:XEL_TOOLKIT_WORKSPACE
     if (-not [string]::IsNullOrWhiteSpace($ws)) {
@@ -132,25 +168,25 @@ function RunOne([string]$path) {
       if ($StartJst) { $cmd += @('--start', $StartJst) }
       if ($EndJst) { $cmd += @('--end', $EndJst) }
       if ($env:XEL_TOOLKIT_RANGES_JSON) { $cmd += @('--ranges-json', $env:XEL_TOOLKIT_RANGES_JSON) }
-      & $cmd[0] $cmd[1..($cmd.Count-1)] | Out-Null
+      Invoke-Python @() | Out-Null
       $cmd = @('python', (Join-Path $RepoRoot 'py/xel_to_md.py'), '--jsonl', $jsonl, '--out', $out, '--key', $key, '--event', 'sql_batch_completed', '--source', $path)
       if ($StartJst) { $cmd += @('--start', $StartJst) }
       if ($EndJst) { $cmd += @('--end', $EndJst) }
       if ($env:XEL_TOOLKIT_RANGES_JSON) { $cmd += @('--ranges-json', $env:XEL_TOOLKIT_RANGES_JSON) }
-      & $cmd[0] $cmd[1..($cmd.Count-1)] | Out-Null
+      Invoke-Python @() | Out-Null
     }
 
     $cmd2 = @('python', (Join-Path $RepoRoot 'py/generate_reports.py'), '--slowquery-jsonl', $jsonl, '--slow-threshold', $SlowThreshold, '--source-xel', $path, '--prefix', $prefix, '--out', $fileOut)
     if ($StartJst) { $cmd2 += @('--start', $StartJst) }
     if ($EndJst) { $cmd2 += @('--end', $EndJst) }
     if ($env:XEL_TOOLKIT_RANGES_JSON) { $cmd2 += @('--ranges-json', $env:XEL_TOOLKIT_RANGES_JSON) }
-    & $cmd2[0] $cmd2[1..($cmd2.Count-1)] | Out-Null
+    Invoke-Python @() | Out-Null
   }
 
   if ($base -like '*blocking*') {
     $key = Hash8 $prefix
     $jsonl = Join-Path $tmpDir ("${prefix}_blocking.jsonl")
-    & dotnet run --project (Join-Path $RepoRoot 'src/XelDump') -- $path --export-jsonl $jsonl --filter blocked_process_report | Out-Null
+    & $DotNetExe run --project (Join-Path $RepoRoot 'src/XelDump') -- $path --export-jsonl $jsonl --filter blocked_process_report | Out-Null
 
     $ws = $env:XEL_TOOLKIT_WORKSPACE
     if (-not [string]::IsNullOrWhiteSpace($ws)) {
@@ -159,14 +195,14 @@ function RunOne([string]$path) {
       if ($StartJst) { $cmd += @('--start', $StartJst) }
       if ($EndJst) { $cmd += @('--end', $EndJst) }
       if ($env:XEL_TOOLKIT_RANGES_JSON) { $cmd += @('--ranges-json', $env:XEL_TOOLKIT_RANGES_JSON) }
-      & $cmd[0] $cmd[1..($cmd.Count-1)] | Out-Null
+      Invoke-Python @() | Out-Null
     }
 
     $cmd2 = @('python', (Join-Path $RepoRoot 'py/generate_reports.py'), '--blocking-jsonl', $jsonl, '--source-xel', $path, '--prefix', $prefix, '--out', $fileOut)
     if ($StartJst) { $cmd2 += @('--start', $StartJst) }
     if ($EndJst) { $cmd2 += @('--end', $EndJst) }
     if ($env:XEL_TOOLKIT_RANGES_JSON) { $cmd2 += @('--ranges-json', $env:XEL_TOOLKIT_RANGES_JSON) }
-    & $cmd2[0] $cmd2[1..($cmd2.Count-1)] | Out-Null
+    Invoke-Python @() | Out-Null
   }
 
   Write-Host "   Done: $prefix"
