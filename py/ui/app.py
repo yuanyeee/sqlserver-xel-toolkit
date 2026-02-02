@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import sys
 import subprocess
 from dataclasses import dataclass
 from datetime import datetime
@@ -492,7 +493,8 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "IntegratedTool", f"Not found: {entry}\nDid you init submodules?")
             return
 
-        # Run IntegratedTool with system python; user can manage its own venv separately.
+        # Run IntegratedTool using a python that exists on this OS.
+        # Prefer IntegratedTool's own venv if present; otherwise fall back to the current interpreter.
         try:
             env = os.environ.copy()
             if self.ws:
@@ -500,11 +502,34 @@ class MainWindow(QMainWindow):
                 rp = self._ranges_path()
                 if rp and os.path.exists(rp):
                     env["XEL_TOOLKIT_RANGES_JSON"] = rp
-            it_python = os.path.join(it_dir, ".venv", "bin", "python")
-            if os.path.exists(it_python):
-                subprocess.Popen([it_python, entry], cwd=it_dir, env=env)
+
+            candidates = []
+            if os.name == "nt":
+                candidates.append(os.path.join(it_dir, ".venv", "Scripts", "python.exe"))
+                candidates.append(os.path.join(it_dir, ".venv", "Scripts", "python"))
+                candidates.append(sys.executable)
+                candidates.append("python")
             else:
-                subprocess.Popen(["python3", entry], cwd=it_dir, env=env)
+                candidates.append(os.path.join(it_dir, ".venv", "bin", "python"))
+                candidates.append(sys.executable)
+                candidates.append("python3")
+                candidates.append("python")
+
+            py = None
+            for c in candidates:
+                if not c:
+                    continue
+                if os.path.isabs(c) and os.path.exists(c):
+                    py = c
+                    break
+                if not os.path.isabs(c):
+                    py = c
+                    break
+
+            if not py:
+                raise RuntimeError("No python interpreter found to launch IntegratedTool")
+
+            subprocess.Popen([py, entry], cwd=it_dir, env=env)
         except Exception as e:
             QMessageBox.critical(self, "IntegratedTool", str(e))
 
