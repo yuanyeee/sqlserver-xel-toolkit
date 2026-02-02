@@ -52,9 +52,15 @@ if (-not $PyCmd) {
   throw "python not found. Install Python 3 and ensure it's on PATH (or install the Python launcher 'py')."
 }
 
-$PyExe = $PyCmd[0]
+# Normalize python command (could be a string or string[] depending on environment)
+$PyExe = $null
 $PyPrefix = @()
-if ($PyCmd.Length -gt 1) { $PyPrefix = $PyCmd[1..($PyCmd.Length-1)] }
+if ($PyCmd -is [string]) {
+  $PyExe = $PyCmd
+} else {
+  $PyExe = $PyCmd[0]
+  if ($PyCmd.Length -gt 1) { $PyPrefix = $PyCmd[1..($PyCmd.Length-1)] }
+}
 
 
 function Usage {
