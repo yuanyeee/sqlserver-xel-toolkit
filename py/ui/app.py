@@ -503,28 +503,18 @@ class MainWindow(QMainWindow):
                 if rp and os.path.exists(rp):
                     env["XEL_TOOLKIT_RANGES_JSON"] = rp
 
-            candidates = []
+            # IMPORTANT: On Windows, always prefer the current interpreter (sys.executable)
+            # because it's typically the uv-managed venv with PySide6 installed.
             if os.name == "nt":
-                candidates.append(os.path.join(it_dir, ".venv", "Scripts", "python.exe"))
-                candidates.append(os.path.join(it_dir, ".venv", "Scripts", "python"))
-                candidates.append(sys.executable)
-                candidates.append("python")
+                py = sys.executable
+                # If IntegratedTool has its own venv, we can prefer it, but only if it exists.
+                it_venv_py = os.path.join(it_dir, ".venv", "Scripts", "python.exe")
+                if os.path.exists(it_venv_py):
+                    py = it_venv_py
             else:
-                candidates.append(os.path.join(it_dir, ".venv", "bin", "python"))
-                candidates.append(sys.executable)
-                candidates.append("python3")
-                candidates.append("python")
-
-            py = None
-            for c in candidates:
-                if not c:
-                    continue
-                if os.path.isabs(c) and os.path.exists(c):
-                    py = c
-                    break
-                if not os.path.isabs(c):
-                    py = c
-                    break
+                py = os.path.join(it_dir, ".venv", "bin", "python")
+                if not os.path.exists(py):
+                    py = sys.executable or "python3"
 
             if not py:
                 raise RuntimeError("No python interpreter found to launch IntegratedTool")
