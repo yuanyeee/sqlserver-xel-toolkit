@@ -14,6 +14,14 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+# Normalize output encoding for piping into Python GUI (avoid mojibake on Japanese paths)
+try {
+  [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+  $OutputEncoding = [System.Text.Encoding]::UTF8
+} catch {
+  # best-effort
+}
+
 # Windows runner equivalent to run.sh
 
 $RepoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
