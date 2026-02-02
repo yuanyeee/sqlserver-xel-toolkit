@@ -11,8 +11,8 @@ SQL Server Extended Events (`.xel`) を **macOS上でオフライン解析**し�
 - 既存の IntegratedTool 相当の集計・出力（Markdown/Excel）を生成
 
 ## 前提
-- macOS
-- .NET 6+
+- macOS / Windows
+- .NET 10+ (or match `TargetFramework` in `src/*/*.csproj`)
 - Python 3.8+
 
 ## 進捗
