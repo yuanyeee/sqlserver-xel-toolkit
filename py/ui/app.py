@@ -76,13 +76,33 @@ class RunWorker(QThread):
 
     def run(self):
         try:
-            cmd = [os.path.join(self.repo_root, "run.sh"), *self.xel_paths, "-o", self.out_dir, "--slow-threshold", str(self.slow_threshold)]
-            self.log.emit("$ " + " ".join(cmd))
             env = os.environ.copy()
             if self.workspace_root:
                 env["XEL_TOOLKIT_WORKSPACE"] = self.workspace_root
             if self.ranges_path and os.path.exists(self.ranges_path):
                 env["XEL_TOOLKIT_RANGES_JSON"] = self.ranges_path
+
+            # Windows cannot execute .sh directly; use PowerShell runner.
+            if os.name == "nt":
+                entry = os.path.join(self.repo_root, "run.ps1")
+                cmd = [
+                    "powershell",
+                    "-NoProfile",
+                    "-ExecutionPolicy",
+                    "Bypass",
+                    "-File",
+                    entry,
+                    *self.xel_paths,
+                    "-o",
+                    self.out_dir,
+                    "--slow-threshold",
+                    str(self.slow_threshold),
+                ]
+            else:
+                entry = os.path.join(self.repo_root, "run.sh")
+                cmd = [entry, *self.xel_paths, "-o", self.out_dir, "--slow-threshold", str(self.slow_threshold)]
+
+            self.log.emit("$ " + " ".join(cmd))
             p = subprocess.Popen(cmd, cwd=self.repo_root, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=env)
             assert p.stdout
             for line in p.stdout:
@@ -91,7 +111,7 @@ class RunWorker(QThread):
             if rc == 0:
                 self.finished_ok.emit(self.out_dir)
             else:
-                self.finished_err.emit(f"run.sh failed with code {rc}")
+                self.finished_err.emit(f"runner failed with code {rc}")
         except Exception as e:
             self.finished_err.emit(str(e))
 

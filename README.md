@@ -94,6 +94,8 @@ Windows（PowerShell）:
 4. 上部検索ボックスで全文検索（SQLite FTS5）
 
 ### 2) レポート生成（推奨）
+
+macOS/Linux:
 ```bash
 # 例: 3種類のXELをまとめて処理
 ./run.sh \
@@ -102,6 +104,11 @@ Windows（PowerShell）:
   ~/Downloads/Slow_Queries*.xel \
   -o ./reports \
   --slow-threshold 3
+```
+
+Windows (PowerShell):
+```powershell
+.\run.ps1 C:\Users\you\Downloads\blocking*.xel C:\Users\you\Downloads\deadlock*.xel C:\Users\you\Downloads\Slow_Queries*.xel -o .\reports --slow-threshold 3
 ```
 
 出力先（例）:
