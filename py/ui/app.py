@@ -103,7 +103,18 @@ class RunWorker(QThread):
                 cmd = [entry, *self.xel_paths, "-o", self.out_dir, "--slow-threshold", str(self.slow_threshold)]
 
             self.log.emit("$ " + " ".join(cmd))
-            p = subprocess.Popen(cmd, cwd=self.repo_root, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=env)
+            # On Windows, subprocess text decoding can crash due to cp932/UTF-8 mismatch.
+            # Force UTF-8 with replacement to keep the UI responsive.
+            p = subprocess.Popen(
+                cmd,
+                cwd=self.repo_root,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                env=env,
+            )
             assert p.stdout
             for line in p.stdout:
                 self.log.emit(line.rstrip("\n"))
