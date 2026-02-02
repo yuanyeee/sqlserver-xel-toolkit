@@ -24,11 +24,25 @@ SQL Server Extended Events (`.xel`) を **macOS上でオフライン解析**し�
 ## 使い方
 
 ### 1) セットアップ（初回のみ）
+
+#### pip/venv
 ```bash
 cd sqlserver-xel-toolkit
 python3 -m venv .venv
 . .venv/bin/activate
 pip install -r py/requirements.txt
+```
+
+#### uv（推奨）
+```bash
+cd sqlserver-xel-toolkit
+./scripts/setup_uv.sh
+```
+
+Windows（PowerShell）:
+```powershell
+cd sqlserver-xel-toolkit
+.\scripts\setup_uv.ps1
 ```
 
 ## IntegratedTool（サブモジュール）
@@ -57,8 +71,20 @@ GUI の `Open IntegratedTool` ボタンから `unified_report_viewer.py` を起�
 > 現在は最小実装（Workspace + Run一覧 + Report一覧 + MDプレビュー + FTS検索）まで。
 
 起動:
+
+#### 既存（pip/venv）
 ```bash
 ./run_gui.sh
+```
+
+#### uv（コンパイル無し）
+```bash
+./scripts/run_gui_uv.sh
+```
+
+Windows（PowerShell）:
+```powershell
+.\scripts\run_gui_uv.ps1
 ```
 
 使い方:
