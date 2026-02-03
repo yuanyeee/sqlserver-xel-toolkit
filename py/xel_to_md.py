@@ -37,6 +37,233 @@ def _write_md(path: str, kv: List[tuple[str, Any]]) -> None:
             f.write("\n```\n\n")
 
 
+def _write_blocking_md(path: str, *, source: str, timestamp: str, actions: dict, fields: dict) -> None:
+    """Write IntegratedTool-friendly blocking markdown.
+
+    Keep legacy '# key' codeblock sections at the bottom for backward compatibility.
+    """
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+
+    xml = str(fields.get('blocked_process') or '')
+
+    def rx(pat: str) -> str:
+        m = re.search(pat, xml, re.DOTALL | re.IGNORECASE)
+        return m.group(1).strip() if m else ''
+
+    victim_sql = rx(r'<blocked-process>.*?<inputbuf>\s*(.+?)\s*</inputbuf>')
+    blocker_sql = rx(r'<blocking-process>.*?<inputbuf>\s*(.+?)\s*</inputbuf>')
+    victim_spid = rx(r"<blocked-process[^>]*spid=['\"](\d+)['\"]")
+    blocker_spid = rx(r"<blocking-process[^>]*spid=['\"](\d+)['\"]")
+
+    out: List[str] = []
+    def w(s: str = ""):
+        out.append(s)
+
+    w('# Blocking (from XEL)')
+    w('')
+    w(f'**Timestamp:** {timestamp}')
+    w(f'**Source:** {source}')
+    w(f'**Event:** blocked_process_report')
+    w('')
+
+    w('## Context')
+    w('')
+    for k, label in [
+        ('database_name','Database'),
+        ('client_app_name','Client App'),
+        ('client_hostname','Client Host'),
+        ('username','Username'),
+        ('session_id','Session ID'),
+    ]:
+        v = actions.get(k) or fields.get(k)
+        if v:
+            w(f'**{label}:** {v}')
+    w('')
+
+    w('## Metrics')
+    w('')
+    for k, label in [
+        ('duration','Duration'),
+        ('cpu_time','CPU Time'),
+        ('logical_reads','Logical Reads'),
+        ('physical_reads','Physical Reads'),
+        ('writes','Writes'),
+        ('row_count','Row Count'),
+    ]:
+        v = fields.get(k)
+        if v is not None and v != '':
+            w(f'**{label}:** {v}')
+    w('')
+
+    w('## Victim (blocked)')
+    w('')
+    if victim_spid:
+        w(f'**SPID:** {victim_spid}')
+    if victim_sql:
+        w('```sql')
+        w(victim_sql)
+        w('```')
+    w('')
+
+    w('## Blocker (blocking)')
+    w('')
+    if blocker_spid:
+        w(f'**SPID:** {blocker_spid}')
+    if blocker_sql:
+        w('```sql')
+        w(blocker_sql)
+        w('```')
+    w('')
+
+    if xml:
+        w('## XML')
+        w('')
+        w('```xml')
+        w(xml.strip())
+        w('```')
+        w('')
+
+    # Legacy KV blocks (used by older IntegratedTool parsers)
+    w('---')
+    w('')
+    w('# timestamp')
+    w('')
+    w('```')
+    w(timestamp)
+    w('```')
+    w('')
+    if 'duration' in fields:
+        w('# duration')
+        w('')
+        w('```')
+        w(str(fields.get('duration') or ''))
+        w('```')
+        w('')
+    if actions.get('database_name'):
+        w('# database_name')
+        w('')
+        w('```')
+        w(str(actions.get('database_name') or ''))
+        w('```')
+        w('')
+    if xml:
+        w('# blocked_process')
+        w('')
+        w('```')
+        w(xml.strip())
+        w('```')
+        w('')
+
+    with open(path, 'w', encoding='utf-8') as f:
+        f.write("\n".join(out))
+
+
+def _write_slowquery_md(path: str, *, source: str, timestamp: str, event_name: str, actions: dict, fields: dict) -> None:
+    """Write IntegratedTool-friendly slowquery markdown.
+
+    Keep legacy '# key' codeblock sections at the bottom for backward compatibility.
+    """
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+
+    sql = actions.get('sql_text') or fields.get('statement') or fields.get('batch_text') or ''
+
+    out: List[str] = []
+    def w(s: str = ""):
+        out.append(s)
+
+    w('# SlowQuery (from XEL)')
+    w('')
+    w(f'**Timestamp:** {timestamp}')
+    w(f'**Source:** {source}')
+    w(f'**Event:** {event_name}')
+    w('')
+
+    w('## Context')
+    w('')
+    for k, label in [
+        ('database_name','Database'),
+        ('client_app_name','Client App'),
+        ('client_hostname','Client Host'),
+        ('username','Username'),
+        ('session_id','Session ID'),
+    ]:
+        v = actions.get(k) or fields.get(k)
+        if v:
+            w(f'**{label}:** {v}')
+    w('')
+
+    w('## Metrics')
+    w('')
+    for k, label in [
+        ('duration','Duration'),
+        ('cpu_time','CPU Time'),
+        ('logical_reads','Logical Reads'),
+        ('physical_reads','Physical Reads'),
+        ('writes','Writes'),
+        ('row_count','Row Count'),
+    ]:
+        v = fields.get(k)
+        if v is not None and v != '':
+            w(f'**{label}:** {v}')
+    w('')
+
+    if sql:
+        w('## SQL')
+        w('')
+        w('```sql')
+        w(str(sql).strip())
+        w('```')
+        w('')
+
+    # Legacy KV blocks
+    w('---')
+    w('')
+    w('# timestamp')
+    w('')
+    w('```')
+    w(timestamp)
+    w('```')
+    w('')
+    if actions.get('database_name'):
+        w('# database_name')
+        w('')
+        w('```')
+        w(str(actions.get('database_name') or ''))
+        w('```')
+        w('')
+    if fields.get('duration') is not None:
+        w('# duration')
+        w('')
+        w('```')
+        w(str(fields.get('duration') or ''))
+        w('```')
+        w('')
+    if actions.get('sql_text'):
+        w('# sql_text')
+        w('')
+        w('```')
+        w(str(actions.get('sql_text') or '').strip())
+        w('```')
+        w('')
+    if fields.get('statement') is not None:
+        w('# statement')
+        w('')
+        w('```')
+        w(str(fields.get('statement') or '').strip())
+        w('```')
+        w('')
+    if fields.get('batch_text') is not None:
+        w('# batch_text')
+        w('')
+        w('```')
+        w(str(fields.get('batch_text') or '').strip())
+        w('```')
+        w('')
+
+    with open(path, 'w', encoding='utf-8') as f:
+        f.write("\n".join(out))
+
+
 def _write_deadlock_md(path: str, *, source: str, timestamp: str, xml_report: str) -> None:
     """Write IntegratedTool-compatible deadlock markdown from xml_report."""
     import xml.etree.ElementTree as ET
@@ -220,6 +447,22 @@ def main():
         # Special case: deadlock report -> emit IntegratedTool-compatible markdown
         if event == "xml_deadlock_report" and "xml_report" in ev.fields and ev.fields.get("xml_report"):
             _write_deadlock_md(path, source=args.source, timestamp=dt_display, xml_report=str(ev.fields.get("xml_report")))
+            count += 1
+            if args.limit and count >= args.limit:
+                break
+            continue
+
+        # Special case: blocking -> emit IntegratedTool-friendly markdown
+        if event == "blocked_process_report" and (ev.fields.get("blocked_process") or "blocked_process" in ev.fields):
+            _write_blocking_md(path, source=args.source, timestamp=dt_display, actions=ev.actions, fields=ev.fields)
+            count += 1
+            if args.limit and count >= args.limit:
+                break
+            continue
+
+        # Special case: slowquery events -> emit IntegratedTool-friendly markdown
+        if event in ("rpc_completed", "sql_batch_completed"):
+            _write_slowquery_md(path, source=args.source, timestamp=dt_display, event_name=event, actions=ev.actions, fields=ev.fields)
             count += 1
             if args.limit and count >= args.limit:
                 break
