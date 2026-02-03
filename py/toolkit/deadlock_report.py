@@ -6,10 +6,12 @@ import xml.etree.ElementTree as ET
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Tuple
+
+import pandas as pd
 
 from .xel_jsonl import iter_events
-from .timeutil import in_range, merge_range, parse_iso, range_tag
+from .timeutil import in_range, merge_range, parse_iso, range_tag, to_jst
 
 
 @dataclass
@@ -71,6 +73,20 @@ def _parse_deadlock_xml(xml_text: str) -> DeadlockItem:
     )
 
 
+_ILLEGAL_EXCEL_RE = re.compile(r"[\x00-\x08\x0B\x0C\x0E-\x1F]")
+
+
+def _clean_excel_text(s: Any) -> Any:
+    if s is None:
+        return None
+    try:
+        text = str(s)
+    except Exception:
+        return s
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    return _ILLEGAL_EXCEL_RE.sub("", text)
+
+
 def generate_deadlock_report_from_jsonl(
     jsonl_path: str,
     *,
@@ -80,7 +96,7 @@ def generate_deadlock_report_from_jsonl(
     start_jst=None,
     end_jst=None,
     ranges=None,
-) -> str:
+) -> Dict[str, str]:
     """Generate a Markdown report from exported xml_deadlock_report events.
 
     Filtering and filename tag are based on XEL event timestamps converted to JST.
@@ -205,8 +221,58 @@ def generate_deadlock_report_from_jsonl(
             lines.append("```")
             lines.append("")
 
-    out_path = os.path.join(out_dir, f"{prefix}_deadlock_report.md")
-    with open(out_path, "w", encoding="utf-8") as f:
+    md_path = os.path.join(out_dir, f"{prefix}_deadlock_report.md")
+    with open(md_path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines))
 
-    return out_path
+    # Excel summary
+    rows: List[Dict[str, Any]] = []
+    for it in items:
+        dt = parse_iso(it.timestamp or "") if it.timestamp else None
+        jst = to_jst(dt) if dt is not None else None
+
+        victim = None
+        offenders: List[str] = []
+        for p in it.processes:
+            spid = p.get("spid")
+            if it.victim_spid and spid == it.victim_spid:
+                victim = p
+            elif spid:
+                offenders.append(spid)
+
+        victim_sql = None
+        if victim and victim.get("inputbuf"):
+            victim_sql = victim.get("inputbuf")
+
+        rows.append(
+            {
+                "timestamp_jst": jst.strftime("%Y-%m-%d %H:%M:%S") if jst else (it.timestamp or ""),
+                "victim_spid": it.victim_spid or "",
+                "offender_spids": ",".join(sorted(set(offenders))),
+                "hostname": (victim or {}).get("hostname", ""),
+                "loginname": (victim or {}).get("loginname", ""),
+                "isolationlevel": (victim or {}).get("isolationlevel", ""),
+                "transactionname": (victim or {}).get("transactionname", ""),
+                "objects": ";".join(sorted(set(it.objects))),
+                "victim_sql": _clean_excel_text(victim_sql or ""),
+                "source_xel": source_xel,
+            }
+        )
+
+    df = pd.DataFrame(rows)
+
+    xlsx_path = os.path.join(out_dir, f"{prefix}_deadlock.xlsx")
+    try:
+        with pd.ExcelWriter(xlsx_path, engine="openpyxl") as w:
+            df.to_excel(w, index=False, sheet_name="deadlocks")
+            if by_object:
+                obj_df = pd.DataFrame([{ "object": k, "count": v } for k, v in by_object.most_common()])
+                obj_df.to_excel(w, index=False, sheet_name="objects")
+    except Exception:
+        # If Excel generation fails for some reason, still return markdown.
+        xlsx_path = ""
+
+    out: Dict[str, str] = {"md": md_path}
+    if xlsx_path and os.path.exists(xlsx_path):
+        out["xlsx"] = xlsx_path
+    return out

@@ -117,9 +117,10 @@ def main():
             end_jst=end_jst,
             ranges=ranges,
         )
-        outputs.append(out)
+        dead_outputs = list(out.values())
+        outputs.extend(dead_outputs)
         mn, mx = _span_for_jsonl(args.deadlock_jsonl, start_jst=start_jst, end_jst=end_jst, ranges=ranges)
-        _write_meta_for_outputs([out], type_="deadlock", event_time_min=mn, event_time_max=mx, ranges_path=ranges_path, start=args.start, end=args.end)
+        _write_meta_for_outputs(dead_outputs, type_="deadlock", event_time_min=mn, event_time_max=mx, ranges_path=ranges_path, start=args.start, end=args.end)
 
     if args.slowquery_jsonl:
         out = generate_slowquery_reports_from_jsonl(

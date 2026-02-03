@@ -965,8 +965,10 @@ class MainWindow(QMainWindow):
                 for fn in sorted(os.listdir(subdir)):
                     p = os.path.join(subdir, fn)
                     if fn.endswith("_deadlock_report.md"):
+                        base2 = fn.replace("_deadlock_report.md", "")
+                        xlsx = os.path.join(subdir, base2 + "_deadlock.xlsx")
                         mn, mx = self._read_span_meta(p)
-                        add_report(conn, run_id=run_id, file_id=file_id, type_="deadlock", title=fn, md_path=p, xlsx_path=None, created_at=created_at, event_time_min=mn, event_time_max=mx)
+                        add_report(conn, run_id=run_id, file_id=file_id, type_="deadlock", title=fn, md_path=p, xlsx_path=(xlsx if os.path.exists(xlsx) else None), created_at=created_at, event_time_min=mn, event_time_max=mx)
                     elif fn.endswith("_slowquery_report.md"):
                         base = fn.replace("_slowquery_report.md", "")
                         xlsx = os.path.join(subdir, base + "_slowquery.xlsx")
@@ -1039,8 +1041,10 @@ class MainWindow(QMainWindow):
                 for fn in sorted(os.listdir(file_out_dir)):
                     p = os.path.join(file_out_dir, fn)
                     if fn.endswith("_deadlock_report.md"):
+                        base2 = fn.replace("_deadlock_report.md", "")
+                        xlsx = os.path.join(file_out_dir, base2 + "_deadlock.xlsx")
                         mn, mx = self._read_span_meta(p)
-                        add_report(conn2, run_id=run_id, file_id=file_id, type_="deadlock", title=fn, md_path=p, xlsx_path=None, created_at=created_at, event_time_min=mn, event_time_max=mx)
+                        add_report(conn2, run_id=run_id, file_id=file_id, type_="deadlock", title=fn, md_path=p, xlsx_path=(xlsx if os.path.exists(xlsx) else None), created_at=created_at, event_time_min=mn, event_time_max=mx)
                     elif fn.endswith("_slowquery_report.md"):
                         base = fn.replace("_slowquery_report.md", "")
                         xlsx = os.path.join(file_out_dir, base + "_slowquery.xlsx")
