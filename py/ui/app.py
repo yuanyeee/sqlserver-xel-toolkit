@@ -30,6 +30,8 @@ from ._qt import (
     QWidget,
 )
 
+from PySide6.QtGui import QAction
+
 from PySide6.QtWidgets import QDialog, QAbstractItemView, QCheckBox
 
 import markdown as mdlib
@@ -211,53 +213,86 @@ class MainWindow(QMainWindow):
         self.file_list.itemSelectionChanged.connect(self.on_select_file)
         self.report_list.itemSelectionChanged.connect(self.on_select_report)
 
+        # Menus (reduce toolbar clutter)
+        mbar = self.menuBar()
+
+        m_ws = mbar.addMenu("Workspace")
+        act_open_ws = QAction("Open…", self)
+        act_open_ws.triggered.connect(self.open_workspace)
+        m_ws.addAction(act_open_ws)
+
+        act_change_ws = QAction("Switch…", self)
+        act_change_ws.triggered.connect(self.change_workspace)
+        m_ws.addAction(act_change_ws)
+
+        m_run = mbar.addMenu("Run")
+        act_new_run = QAction("New Run…", self)
+        act_new_run.triggered.connect(self.new_run)
+        m_run.addAction(act_new_run)
+
+        act_refresh = QAction("Refresh", self)
+        act_refresh.triggered.connect(self.reload_lists)
+        m_run.addAction(act_refresh)
+
+        m_ranges = mbar.addMenu("Ranges")
+        act_edit_ranges = QAction("Edit ranges…", self)
+        act_edit_ranges.triggered.connect(self.open_time_ranges)
+        m_ranges.addAction(act_edit_ranges)
+
+        self.act_apply_ranges = QAction("Apply ranges to view", self)
+        self.act_apply_ranges.setCheckable(True)
+        self.act_apply_ranges.setChecked(True)
+        self.act_apply_ranges.triggered.connect(lambda _: self.reload_lists())
+        m_ranges.addAction(self.act_apply_ranges)
+
+        m_tools = mbar.addMenu("Tools")
+        act_open_it = QAction("Open IntegratedTool", self)
+        act_open_it.triggered.connect(self.open_integratedtool)
+        m_tools.addAction(act_open_it)
+
+        m_maint = mbar.addMenu("Maintenance")
+        act_cleanup = QAction("Cleanup inputMD…", self)
+        act_cleanup.triggered.connect(self.cleanup_inputmd)
+        m_maint.addAction(act_cleanup)
+
+        m_del = mbar.addMenu("Delete")
+        act_del_run = QAction("Delete Run…", self)
+        act_del_run.triggered.connect(self.delete_selected_run)
+        m_del.addAction(act_del_run)
+
+        act_del_file = QAction("Delete File…", self)
+        act_del_file.triggered.connect(self.delete_selected_file)
+        m_del.addAction(act_del_file)
+
+        act_del_report = QAction("Delete Report…", self)
+        act_del_report.triggered.connect(self.delete_selected_report)
+        m_del.addAction(act_del_report)
+
+        # Minimal toolbar
         tb = QToolBar("Main")
         self.addToolBar(tb)
 
-        btn_open_ws = QPushButton("Open Workspace")
-        btn_open_ws.clicked.connect(self.open_workspace)
-        tb.addWidget(btn_open_ws)
-
-        btn_change_ws = QPushButton("Workspace変更…")
-        btn_change_ws.clicked.connect(self.change_workspace)
-        tb.addWidget(btn_change_ws)
+        btn_ws = QPushButton("Workspace…")
+        btn_ws.clicked.connect(self.change_workspace)
+        tb.addWidget(btn_ws)
 
         btn_new_run = QPushButton("New Run")
         btn_new_run.clicked.connect(self.new_run)
         tb.addWidget(btn_new_run)
 
+        btn_ranges = QPushButton("Ranges…")
+        btn_ranges.clicked.connect(self.open_time_ranges)
+        tb.addWidget(btn_ranges)
+
         btn_refresh = QPushButton("Refresh")
         btn_refresh.clicked.connect(self.reload_lists)
         tb.addWidget(btn_refresh)
 
-        btn_ranges = QPushButton("出力時間範囲…")
-        btn_ranges.clicked.connect(self.open_time_ranges)
-        tb.addWidget(btn_ranges)
-
-        self.chk_apply_ranges = QCheckBox("表示に時間範囲を適用")
-        self.chk_apply_ranges.setChecked(True)
-        self.chk_apply_ranges.stateChanged.connect(lambda _: self.reload_lists())
-        tb.addWidget(self.chk_apply_ranges)
-
-        btn_cleanup = QPushButton("清理 inputMD…")
-        btn_cleanup.clicked.connect(self.cleanup_inputmd)
-        tb.addWidget(btn_cleanup)
-
-        btn_del_run = QPushButton("删除 Run…")
-        btn_del_run.clicked.connect(self.delete_selected_run)
-        tb.addWidget(btn_del_run)
-
-        btn_del_file = QPushButton("删除 File…")
-        btn_del_file.clicked.connect(self.delete_selected_file)
-        tb.addWidget(btn_del_file)
-
-        btn_del_report = QPushButton("删除 Report…")
-        btn_del_report.clicked.connect(self.delete_selected_report)
-        tb.addWidget(btn_del_report)
-
-        btn_it = QPushButton("Open IntegratedTool")
+        btn_it = QPushButton("IntegratedTool")
         btn_it.clicked.connect(self.open_integratedtool)
         tb.addWidget(btn_it)
+
+        tb.addSeparator()
 
         self.status = QLabel("")
         tb.addWidget(self.status)
@@ -283,7 +318,7 @@ class MainWindow(QMainWindow):
         if not self.ws:
             self.status.setText("")
             return
-        apply = "ON" if self.chk_apply_ranges.isChecked() else "OFF"
+        apply = "ON" if self.act_apply_ranges.isChecked() else "OFF"
         self.status.setText(f"{os.path.basename(self.ws.root)} | RangeView:{apply} | {self._ranges_summary()}")
 
     def _set_workspace(self, d: str):
@@ -336,7 +371,7 @@ class MainWindow(QMainWindow):
         """View filter: if enabled, only show reports overlapping current ranges.json."""
         if not self.ws:
             return True
-        if not self.chk_apply_ranges.isChecked():
+        if not self.act_apply_ranges.isChecked():
             return True
         rp = self._ranges_path()
         if not rp or not os.path.exists(rp):
