@@ -44,7 +44,9 @@ CREATE TABLE IF NOT EXISTS reports (
   title TEXT,
   md_path TEXT,
   xlsx_path TEXT,
-  created_at TEXT NOT NULL
+  created_at TEXT NOT NULL,
+  event_time_min TEXT,
+  event_time_max TEXT
 );
 
 CREATE VIRTUAL TABLE IF NOT EXISTS reports_fts USING fts5(
@@ -83,6 +85,8 @@ class ReportRow:
     md_path: Optional[str]
     xlsx_path: Optional[str]
     created_at: str
+    event_time_min: Optional[str]
+    event_time_max: Optional[str]
 
 
 def connect_db(db_path: str) -> sqlite3.Connection:
@@ -199,10 +203,12 @@ def add_report(
     md_path: Optional[str],
     xlsx_path: Optional[str],
     created_at: str,
+    event_time_min: Optional[str] = None,
+    event_time_max: Optional[str] = None,
 ) -> int:
     cur = conn.execute(
-        "INSERT INTO reports(run_id,file_id,type,title,md_path,xlsx_path,created_at) VALUES(?,?,?,?,?,?,?)",
-        (run_id, file_id, type_, title, md_path, xlsx_path, created_at),
+        "INSERT INTO reports(run_id,file_id,type,title,md_path,xlsx_path,created_at,event_time_min,event_time_max) VALUES(?,?,?,?,?,?,?,?,?)",
+        (run_id, file_id, type_, title, md_path, xlsx_path, created_at, event_time_min, event_time_max),
     )
     report_id = int(cur.lastrowid)
 
@@ -254,20 +260,31 @@ def delete_file_db(conn: sqlite3.Connection, file_id: int) -> None:
 def list_reports(conn: sqlite3.Connection, run_id: Optional[int] = None, file_id: Optional[int] = None) -> List[ReportRow]:
     if file_id is not None:
         rows = conn.execute(
-            "SELECT id, run_id, file_id, type, COALESCE(title,'') AS title, md_path, xlsx_path, created_at FROM reports WHERE file_id=? ORDER BY id DESC",
+            "SELECT id, run_id, file_id, type, COALESCE(title,'') AS title, md_path, xlsx_path, created_at, event_time_min, event_time_max FROM reports WHERE file_id=? ORDER BY id DESC",
             (file_id,),
         ).fetchall()
     elif run_id is None:
         rows = conn.execute(
-            "SELECT id, run_id, file_id, type, COALESCE(title,'') AS title, md_path, xlsx_path, created_at FROM reports ORDER BY id DESC"
+            "SELECT id, run_id, file_id, type, COALESCE(title,'') AS title, md_path, xlsx_path, created_at, event_time_min, event_time_max FROM reports ORDER BY id DESC"
         ).fetchall()
     else:
         rows = conn.execute(
-            "SELECT id, run_id, file_id, type, COALESCE(title,'') AS title, md_path, xlsx_path, created_at FROM reports WHERE run_id=? ORDER BY id DESC",
+            "SELECT id, run_id, file_id, type, COALESCE(title,'') AS title, md_path, xlsx_path, created_at, event_time_min, event_time_max FROM reports WHERE run_id=? ORDER BY id DESC",
             (run_id,),
         ).fetchall()
     return [
-        ReportRow(int(r["id"]), int(r["run_id"]), (int(r["file_id"]) if r["file_id"] is not None else None), r["type"], r["title"], r["md_path"], r["xlsx_path"], r["created_at"])
+        ReportRow(
+            int(r["id"]),
+            int(r["run_id"]),
+            (int(r["file_id"]) if r["file_id"] is not None else None),
+            r["type"],
+            r["title"],
+            r["md_path"],
+            r["xlsx_path"],
+            r["created_at"],
+            r["event_time_min"],
+            r["event_time_max"],
+        )
         for r in rows
     ]
 
@@ -282,9 +299,20 @@ def search_reports(conn: sqlite3.Connection, query: str, limit: int = 200) -> Li
 
 def get_report(conn: sqlite3.Connection, report_id: int) -> Optional[ReportRow]:
     r = conn.execute(
-        "SELECT id, run_id, file_id, type, COALESCE(title,'') AS title, md_path, xlsx_path, created_at FROM reports WHERE id=?",
+        "SELECT id, run_id, file_id, type, COALESCE(title,'') AS title, md_path, xlsx_path, created_at, event_time_min, event_time_max FROM reports WHERE id=?",
         (report_id,),
     ).fetchone()
     if not r:
         return None
-    return ReportRow(int(r["id"]), int(r["run_id"]), (int(r["file_id"]) if r["file_id"] is not None else None), r["type"], r["title"], r["md_path"], r["xlsx_path"], r["created_at"])
+    return ReportRow(
+        int(r["id"]),
+        int(r["run_id"]),
+        (int(r["file_id"]) if r["file_id"] is not None else None),
+        r["type"],
+        r["title"],
+        r["md_path"],
+        r["xlsx_path"],
+        r["created_at"],
+        r["event_time_min"],
+        r["event_time_max"],
+    )

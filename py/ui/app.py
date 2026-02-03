@@ -30,9 +30,10 @@ from ._qt import (
     QWidget,
 )
 
-from PySide6.QtWidgets import QDialog, QAbstractItemView
+from PySide6.QtWidgets import QDialog, QAbstractItemView, QCheckBox
 
 import markdown as mdlib
+import json
 
 from .workspace import (
     RunRow,
@@ -50,7 +51,7 @@ from .workspace import (
     search_reports,
 )
 
-from .time_range_dialog import TimeRangeDialog
+from .time_range_dialog import TimeRangeDialog, load_ranges
 from .cleanup_inputmd_dialog import CleanupInputMdDialog
 from .delete_run_dialog import DeleteRunDialog
 from .delete_file_dialog import DeleteFileDialog
@@ -233,6 +234,11 @@ class MainWindow(QMainWindow):
         btn_ranges.clicked.connect(self.open_time_ranges)
         tb.addWidget(btn_ranges)
 
+        self.chk_apply_ranges = QCheckBox("表示に時間範囲を適用")
+        self.chk_apply_ranges.setChecked(True)
+        self.chk_apply_ranges.stateChanged.connect(lambda _: self.reload_lists())
+        tb.addWidget(self.chk_apply_ranges)
+
         btn_cleanup = QPushButton("清理 inputMD…")
         btn_cleanup.clicked.connect(self.cleanup_inputmd)
         tb.addWidget(btn_cleanup)
@@ -256,15 +262,39 @@ class MainWindow(QMainWindow):
         self.status = QLabel("")
         tb.addWidget(self.status)
 
+    def _ranges_summary(self) -> str:
+        if not self.ws:
+            return ""
+        rp = self._ranges_path()
+        if not rp or not os.path.exists(rp):
+            return "Range: (none)"
+        items = load_ranges(rp)
+        if not items:
+            return "Range: (empty)"
+
+        # Compact display: show count + first/last
+        first = items[0]
+        last = items[-1]
+        if len(items) == 1:
+            return f"Range: 1 ({first.start}~{first.end})"
+        return f"Range: {len(items)} ({first.start}~{first.end}, ... , {last.start}~{last.end})"
+
+    def _update_status(self):
+        if not self.ws:
+            self.status.setText("")
+            return
+        apply = "ON" if self.chk_apply_ranges.isChecked() else "OFF"
+        self.status.setText(f"{os.path.basename(self.ws.root)} | RangeView:{apply} | {self._ranges_summary()}")
+
     def _set_workspace(self, d: str):
         if not d:
             return
         db_path = os.path.join(d, "workspace.db")
         init_db(db_path)
         self.ws = WorkspaceState(root=d, db_path=db_path)
-        self.status.setText(os.path.basename(d))
         # keep env consistent for integrated tools
         os.environ["XEL_TOOLKIT_WORKSPACE"] = d
+        self._update_status()
         self.reload_lists()
 
     def open_workspace(self):
@@ -287,6 +317,7 @@ class MainWindow(QMainWindow):
     def reload_lists(self):
         if not self.ws:
             return
+        self._update_status()
         conn = connect_db(self.ws.db_path)
         try:
             self.run_list.clear()
@@ -301,11 +332,43 @@ class MainWindow(QMainWindow):
         finally:
             conn.close()
 
+    def _report_in_current_ranges(self, rep) -> bool:
+        """View filter: if enabled, only show reports overlapping current ranges.json."""
+        if not self.ws:
+            return True
+        if not self.chk_apply_ranges.isChecked():
+            return True
+        rp = self._ranges_path()
+        if not rp or not os.path.exists(rp):
+            return True
+        items = load_ranges(rp)
+        if not items:
+            return True
+
+        # If report has no span (older DB), keep it visible for compatibility
+        if not rep.event_time_min or not rep.event_time_max:
+            return True
+
+        a0 = rep.event_time_min
+        a1 = rep.event_time_max
+        # String compare works for YYYY-mm-dd HH:MM format
+        for it in items:
+            b0 = it.start
+            b1 = it.end
+            if a0 <= b1 and b0 <= a1:
+                return True
+        return False
+
     def populate_reports(self, conn, run_id: Optional[int], file_id: Optional[int]):
         self.report_list.clear()
         for rep in list_reports(conn, run_id=run_id, file_id=file_id):
+            if not self._report_in_current_ranges(rep):
+                continue
             title = rep.title or os.path.basename(rep.md_path or rep.xlsx_path or "")
-            item = QListWidgetItem(f"[{rep.type}] {title}")
+            span = ""
+            if rep.event_time_min and rep.event_time_max:
+                span = f" ({rep.event_time_min}~{rep.event_time_max})"
+            item = QListWidgetItem(f"[{rep.type}] {title}{span}")
             item.setData(Qt.UserRole, rep.id)
             self.report_list.addItem(item)
 
@@ -390,8 +453,13 @@ class MainWindow(QMainWindow):
                     continue
                 if run_id is not None and rep.run_id != run_id:
                     continue
+                if not self._report_in_current_ranges(rep):
+                    continue
                 title = rep.title or os.path.basename(rep.md_path or rep.xlsx_path or "")
-                item = QListWidgetItem(f"[{rep.type}] {title}")
+                span = ""
+                if rep.event_time_min and rep.event_time_max:
+                    span = f" ({rep.event_time_min}~{rep.event_time_max})"
+                item = QListWidgetItem(f"[{rep.type}] {title}{span}")
                 item.setData(Qt.UserRole, rep.id)
                 self.report_list.addItem(item)
         finally:
@@ -410,6 +478,9 @@ class MainWindow(QMainWindow):
         assert path
         dlg = TimeRangeDialog(path, self)
         dlg.exec()
+        # reflect changes
+        self._update_status()
+        self.reload_lists()
 
     def cleanup_inputmd(self):
         if not self.ws:
@@ -652,6 +723,18 @@ class MainWindow(QMainWindow):
 
     def on_run_finished(self, xel_files: List[str], out_dir: str, slow: float):
         # Scan outputs and insert into DB
+
+        def _read_span(meta_for_path: str):
+            mp = meta_for_path + ".meta.json"
+            if not os.path.exists(mp):
+                return None, None
+            try:
+                with open(mp, "r", encoding="utf-8") as f:
+                    obj = json.load(f) or {}
+                return obj.get("event_time_min"), obj.get("event_time_max")
+            except Exception:
+                return None, None
+
         conn = connect_db(self.ws.db_path)
         try:
             # Keep only one DB row per stable out_dir
@@ -679,15 +762,18 @@ class MainWindow(QMainWindow):
                 for fn in sorted(os.listdir(subdir)):
                     p = os.path.join(subdir, fn)
                     if fn.endswith("_deadlock_report.md"):
-                        add_report(conn, run_id=run_id, file_id=file_id, type_="deadlock", title=fn, md_path=p, xlsx_path=None, created_at=created_at)
+                        mn, mx = _read_span(p)
+                        add_report(conn, run_id=run_id, file_id=file_id, type_="deadlock", title=fn, md_path=p, xlsx_path=None, created_at=created_at, event_time_min=mn, event_time_max=mx)
                     elif fn.endswith("_slowquery_report.md"):
                         base = fn.replace("_slowquery_report.md", "")
                         xlsx = os.path.join(subdir, base + "_slowquery.xlsx")
-                        add_report(conn, run_id=run_id, file_id=file_id, type_="slowquery", title=fn, md_path=p, xlsx_path=(xlsx if os.path.exists(xlsx) else None), created_at=created_at)
+                        mn, mx = _read_span(p)
+                        add_report(conn, run_id=run_id, file_id=file_id, type_="slowquery", title=fn, md_path=p, xlsx_path=(xlsx if os.path.exists(xlsx) else None), created_at=created_at, event_time_min=mn, event_time_max=mx)
                     elif fn.endswith("_blocking_report.md"):
                         base = fn.replace("_blocking_report.md", "")
                         xlsx = os.path.join(subdir, base + "_blocking.xlsx")
-                        add_report(conn, run_id=run_id, file_id=file_id, type_="blocking", title=fn, md_path=p, xlsx_path=(xlsx if os.path.exists(xlsx) else None), created_at=created_at)
+                        mn, mx = _read_span(p)
+                        add_report(conn, run_id=run_id, file_id=file_id, type_="blocking", title=fn, md_path=p, xlsx_path=(xlsx if os.path.exists(xlsx) else None), created_at=created_at, event_time_min=mn, event_time_max=mx)
 
                 # CSV/Excel generated MD items
                 md_root = os.path.join(subdir, "md")

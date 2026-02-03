@@ -133,7 +133,8 @@ run_one() {
     KEY="$(echo "$prefix" | shasum -a 256 | awk '{print substr($1,1,8)}')"
 
     if [[ -n "$WS" ]]; then
-      python3 "$REPO_ROOT/py/xel_to_md.py" --jsonl "$deadlock_jsonl" --out "$WS/inputMD/$safe_base" --key "$KEY" --event xml_deadlock_report --source "$xel" ${START_JST:+--start "$START_JST"} ${END_JST:+--end "$END_JST"} ${XEL_TOOLKIT_RANGES_JSON:+--ranges-json "$XEL_TOOLKIT_RANGES_JSON"} >/dev/null
+      # NOTE: inputMD is unfiltered (always export all events to markdown)
+      XEL_TOOLKIT_RANGES_JSON= python3 "$REPO_ROOT/py/xel_to_md.py" --jsonl "$deadlock_jsonl" --out "$WS/inputMD/$safe_base" --key "$KEY" --event xml_deadlock_report --source "$xel" >/dev/null
     fi
 
     python3 "$REPO_ROOT/py/generate_reports.py" \
@@ -156,7 +157,8 @@ run_one() {
     KEY="$(echo "$prefix" | shasum -a 256 | awk '{print substr($1,1,8)}')"
 
     if [[ -n "$WS" ]]; then
-      python3 "$REPO_ROOT/py/xel_to_md.py" --jsonl "$blocking_jsonl" --out "$WS/inputMD/$safe_base" --key "$KEY" --event blocked_process_report --source "$xel" ${START_JST:+--start "$START_JST"} ${END_JST:+--end "$END_JST"} ${XEL_TOOLKIT_RANGES_JSON:+--ranges-json "$XEL_TOOLKIT_RANGES_JSON"} >/dev/null
+      # NOTE: inputMD is unfiltered (always export all events to markdown)
+      XEL_TOOLKIT_RANGES_JSON= python3 "$REPO_ROOT/py/xel_to_md.py" --jsonl "$blocking_jsonl" --out "$WS/inputMD/$safe_base" --key "$KEY" --event blocked_process_report --source "$xel" >/dev/null
     fi
 
     python3 "$REPO_ROOT/py/generate_reports.py" \
@@ -190,8 +192,9 @@ run_one() {
     KEY="$(echo "$prefix" | shasum -a 256 | awk '{print substr($1,1,8)}')"
 
     if [[ -n "$WS" ]]; then
-      python3 "$REPO_ROOT/py/xel_to_md.py" --jsonl "$slow_jsonl" --out "$WS/inputMD/$safe_base" --key "$KEY" --event rpc_completed --source "$xel" ${START_JST:+--start "$START_JST"} ${END_JST:+--end "$END_JST"} ${XEL_TOOLKIT_RANGES_JSON:+--ranges-json "$XEL_TOOLKIT_RANGES_JSON"} >/dev/null
-      python3 "$REPO_ROOT/py/xel_to_md.py" --jsonl "$slow_jsonl" --out "$WS/inputMD/$safe_base" --key "$KEY" --event sql_batch_completed --source "$xel" ${START_JST:+--start "$START_JST"} ${END_JST:+--end "$END_JST"} ${XEL_TOOLKIT_RANGES_JSON:+--ranges-json "$XEL_TOOLKIT_RANGES_JSON"} >/dev/null
+      # NOTE: inputMD is unfiltered (always export all events to markdown)
+      XEL_TOOLKIT_RANGES_JSON= python3 "$REPO_ROOT/py/xel_to_md.py" --jsonl "$slow_jsonl" --out "$WS/inputMD/$safe_base" --key "$KEY" --event rpc_completed --source "$xel" >/dev/null
+      XEL_TOOLKIT_RANGES_JSON= python3 "$REPO_ROOT/py/xel_to_md.py" --jsonl "$slow_jsonl" --out "$WS/inputMD/$safe_base" --key "$KEY" --event sql_batch_completed --source "$xel" >/dev/null
     fi
 
     python3 "$REPO_ROOT/py/generate_reports.py" \

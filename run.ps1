@@ -160,11 +160,12 @@ function RunOne([string]$path) {
     $key = Hash8 $prefix
     if (-not [string]::IsNullOrWhiteSpace($ws)) {
       $out = Join-Path (Join-Path $ws 'inputMD') $safeBase
+      # NOTE: inputMD is unfiltered (always export all events to markdown)
+      $oldRanges = $env:XEL_TOOLKIT_RANGES_JSON
+      $env:XEL_TOOLKIT_RANGES_JSON = $null
       $cmd = @('python', (Join-Path $RepoRoot 'py/xel_to_md.py'), '--jsonl', $deadlockJsonl, '--out', $out, '--key', $key, '--event', 'xml_deadlock_report', '--source', $path)
-      if ($StartJst) { $cmd += @('--start', $StartJst) }
-      if ($EndJst) { $cmd += @('--end', $EndJst) }
-      if ($env:XEL_TOOLKIT_RANGES_JSON) { $cmd += @('--ranges-json', $env:XEL_TOOLKIT_RANGES_JSON) }
       & $PyExe @($PyPrefix + @($cmd[1..($cmd.Count-1)])) | Out-Null
+      $env:XEL_TOOLKIT_RANGES_JSON = $oldRanges
     }
     $cmd2 = @('python', (Join-Path $RepoRoot 'py/generate_reports.py'), '--deadlock-jsonl', $deadlockJsonl, '--source-xel', $path, '--prefix', $prefix, '--out', $fileOut)
     if ($StartJst) { $cmd2 += @('--start', $StartJst) }
@@ -180,11 +181,12 @@ function RunOne([string]$path) {
     $key = Hash8 $prefix
     if (-not [string]::IsNullOrWhiteSpace($ws)) {
       $out = Join-Path (Join-Path $ws 'inputMD') $safeBase
+      # NOTE: inputMD is unfiltered (always export all events to markdown)
+      $oldRanges = $env:XEL_TOOLKIT_RANGES_JSON
+      $env:XEL_TOOLKIT_RANGES_JSON = $null
       $cmd = @('python', (Join-Path $RepoRoot 'py/xel_to_md.py'), '--jsonl', $blockingJsonl, '--out', $out, '--key', $key, '--event', 'blocked_process_report', '--source', $path)
-      if ($StartJst) { $cmd += @('--start', $StartJst) }
-      if ($EndJst) { $cmd += @('--end', $EndJst) }
-      if ($env:XEL_TOOLKIT_RANGES_JSON) { $cmd += @('--ranges-json', $env:XEL_TOOLKIT_RANGES_JSON) }
       & $PyExe @($PyPrefix + @($cmd[1..($cmd.Count-1)])) | Out-Null
+      $env:XEL_TOOLKIT_RANGES_JSON = $oldRanges
     }
     $cmd2 = @('python', (Join-Path $RepoRoot 'py/generate_reports.py'), '--blocking-jsonl', $blockingJsonl, '--source-xel', $path, '--prefix', $prefix, '--out', $fileOut)
     if ($StartJst) { $cmd2 += @('--start', $StartJst) }
@@ -209,17 +211,17 @@ function RunOne([string]$path) {
     $key = Hash8 $prefix
     if (-not [string]::IsNullOrWhiteSpace($ws)) {
       $out = Join-Path (Join-Path $ws 'inputMD') $safeBase
+      # NOTE: inputMD is unfiltered (always export all events to markdown)
+      $oldRanges = $env:XEL_TOOLKIT_RANGES_JSON
+      $env:XEL_TOOLKIT_RANGES_JSON = $null
+
       $cmd = @('python', (Join-Path $RepoRoot 'py/xel_to_md.py'), '--jsonl', $slowJsonl, '--out', $out, '--key', $key, '--event', 'rpc_completed', '--source', $path)
-      if ($StartJst) { $cmd += @('--start', $StartJst) }
-      if ($EndJst) { $cmd += @('--end', $EndJst) }
-      if ($env:XEL_TOOLKIT_RANGES_JSON) { $cmd += @('--ranges-json', $env:XEL_TOOLKIT_RANGES_JSON) }
       & $PyExe @($PyPrefix + @($cmd[1..($cmd.Count-1)])) | Out-Null
 
       $cmd = @('python', (Join-Path $RepoRoot 'py/xel_to_md.py'), '--jsonl', $slowJsonl, '--out', $out, '--key', $key, '--event', 'sql_batch_completed', '--source', $path)
-      if ($StartJst) { $cmd += @('--start', $StartJst) }
-      if ($EndJst) { $cmd += @('--end', $EndJst) }
-      if ($env:XEL_TOOLKIT_RANGES_JSON) { $cmd += @('--ranges-json', $env:XEL_TOOLKIT_RANGES_JSON) }
       & $PyExe @($PyPrefix + @($cmd[1..($cmd.Count-1)])) | Out-Null
+
+      $env:XEL_TOOLKIT_RANGES_JSON = $oldRanges
     }
 
     $cmd2 = @('python', (Join-Path $RepoRoot 'py/generate_reports.py'), '--slowquery-jsonl', $slowJsonl, '--slow-threshold', $SlowThreshold, '--source-xel', $path, '--prefix', $prefix, '--out', $fileOut)

@@ -24,4 +24,10 @@ def migrate(conn: sqlite3.Connection) -> None:
     if table_exists(conn, "reports") and not column_exists(conn, "reports", "file_id"):
         conn.execute("ALTER TABLE reports ADD COLUMN file_id INTEGER")
 
+    # Add event time span columns (for GUI range filtering)
+    if table_exists(conn, "reports") and not column_exists(conn, "reports", "event_time_min"):
+        conn.execute("ALTER TABLE reports ADD COLUMN event_time_min TEXT")
+    if table_exists(conn, "reports") and not column_exists(conn, "reports", "event_time_max"):
+        conn.execute("ALTER TABLE reports ADD COLUMN event_time_max TEXT")
+
     conn.commit()
