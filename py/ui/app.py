@@ -30,7 +30,8 @@ from ._qt import (
     QWidget,
 )
 
-from PySide6.QtGui import QAction
+from PySide6.QtGui import QAction, QDesktopServices
+from PySide6.QtCore import QUrl
 
 from PySide6.QtWidgets import QDialog, QAbstractItemView, QCheckBox
 
@@ -477,7 +478,10 @@ class MainWindow(QMainWindow):
             span = ""
             if rep.event_time_min and rep.event_time_max:
                 span = f" ({rep.event_time_min}~{rep.event_time_max})"
-            item = QListWidgetItem(f"[{rep.type}] {title}{span}")
+            extra = ""
+            if rep.xlsx_path and os.path.exists(rep.xlsx_path):
+                extra = " [xlsx]"
+            item = QListWidgetItem(f"[{rep.type}] {title}{extra}{span}")
             item.setData(Qt.UserRole, rep.id)
             self.report_list.addItem(item)
 
@@ -532,13 +536,24 @@ class MainWindow(QMainWindow):
         finally:
             conn.close()
 
+        # If xlsx exists, show a link to open it externally.
+        xlsx_link = ""
+        if rep and rep.xlsx_path and os.path.exists(rep.xlsx_path):
+            url = QUrl.fromLocalFile(rep.xlsx_path).toString()
+            xlsx_link = f'<p><b>Excel:</b> <a href="{url}">{os.path.basename(rep.xlsx_path)}</a></p>'
+
         if not rep or not rep.md_path or not os.path.exists(rep.md_path):
-            self.preview.setPlainText("(no markdown)\n")
+            if xlsx_link:
+                self.preview.setHtml(xlsx_link + "<p>(no markdown)</p>")
+            else:
+                self.preview.setPlainText("(no markdown)\n")
             return
 
         with open(rep.md_path, "r", encoding="utf-8") as f:
             text = f.read()
         html = mdlib.markdown(text, extensions=["tables", "fenced_code"])
+        if xlsx_link:
+            html = xlsx_link + html
         self.preview.setHtml(html)
 
     def do_search(self):
@@ -568,7 +583,10 @@ class MainWindow(QMainWindow):
                 span = ""
                 if rep.event_time_min and rep.event_time_max:
                     span = f" ({rep.event_time_min}~{rep.event_time_max})"
-                item = QListWidgetItem(f"[{rep.type}] {title}{span}")
+                extra = ""
+                if rep.xlsx_path and os.path.exists(rep.xlsx_path):
+                    extra = " [xlsx]"
+                item = QListWidgetItem(f"[{rep.type}] {title}{extra}{span}")
                 item.setData(Qt.UserRole, rep.id)
                 self.report_list.addItem(item)
         finally:
