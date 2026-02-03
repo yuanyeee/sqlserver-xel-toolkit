@@ -256,7 +256,10 @@ class MainWindow(QMainWindow):
         self.report_list = QListWidget()
         self.report_list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.preview = QTextBrowser()
-        self.preview.setOpenExternalLinks(True)
+        # Handle clicks ourselves to avoid QTextBrowser trying to render local files (can show mojibake)
+        self.preview.setOpenExternalLinks(False)
+        self.preview.setOpenLinks(False)
+        self.preview.anchorClicked.connect(self.on_preview_link_clicked)
 
         self.search_box = QLineEdit()
         self.search_box.setPlaceholderText("全文検索 (FTS5)...")
@@ -523,6 +526,13 @@ class MainWindow(QMainWindow):
         finally:
             conn.close()
 
+    def on_preview_link_clicked(self, url: QUrl):
+        # Always open links externally (Excel/Explorer/editor) rather than rendering inside QTextBrowser.
+        try:
+            QDesktopServices.openUrl(url)
+        except Exception:
+            pass
+
     def on_select_report(self):
         if not self.ws:
             return
@@ -536,15 +546,22 @@ class MainWindow(QMainWindow):
         finally:
             conn.close()
 
-        # If xlsx exists, show a link to open it externally.
-        xlsx_link = ""
-        if rep and rep.xlsx_path and os.path.exists(rep.xlsx_path):
-            url = QUrl.fromLocalFile(rep.xlsx_path).toString()
-            xlsx_link = f'<p><b>Excel:</b> <a href="{url}">{os.path.basename(rep.xlsx_path)}</a></p>'
+        # Header links (open externally)
+        links = []
+        if rep:
+            if rep.md_path and os.path.exists(rep.md_path):
+                md_url = QUrl.fromLocalFile(rep.md_path).toString(QUrl.ComponentFormattingOption.FullyEncoded)
+                links.append(f'<a href="{md_url}">MDを開く</a>')
+            if rep.xlsx_path and os.path.exists(rep.xlsx_path):
+                xlsx_url = QUrl.fromLocalFile(rep.xlsx_path).toString(QUrl.ComponentFormattingOption.FullyEncoded)
+                links.append(f'<a href="{xlsx_url}">Excelを開く</a>')
+        header = ""
+        if links:
+            header = "<p>" + " | ".join(links) + "</p><hr/>"
 
         if not rep or not rep.md_path or not os.path.exists(rep.md_path):
-            if xlsx_link:
-                self.preview.setHtml(xlsx_link + "<p>(no markdown)</p>")
+            if header:
+                self.preview.setHtml(header + "<p>(no markdown)</p>")
             else:
                 self.preview.setPlainText("(no markdown)\n")
             return
@@ -552,9 +569,7 @@ class MainWindow(QMainWindow):
         with open(rep.md_path, "r", encoding="utf-8") as f:
             text = f.read()
         html = mdlib.markdown(text, extensions=["tables", "fenced_code"])
-        if xlsx_link:
-            html = xlsx_link + html
-        self.preview.setHtml(html)
+        self.preview.setHtml(header + html)
 
     def do_search(self):
         if not self.ws:
