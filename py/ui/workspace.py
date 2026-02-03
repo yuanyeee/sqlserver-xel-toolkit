@@ -246,13 +246,31 @@ def delete_report_db(conn: sqlite3.Connection, report_id: int) -> None:
     conn.commit()
 
 
+def delete_reports_by_file_db(conn: sqlite3.Connection, file_id: int, *, types: Optional[List[str]] = None) -> None:
+    """Delete reports (and FTS rows) for a given file.
+
+    If types is provided, only delete those report types.
+    """
+    if types:
+        q = "SELECT id FROM reports WHERE file_id=? AND type IN (%s)" % (",".join(["?"] * len(types)))
+        rows = conn.execute(q, (file_id, *types)).fetchall()
+        for r in rows:
+            rid = int(r[0])
+            conn.execute("DELETE FROM reports_fts WHERE report_id=?", (rid,))
+        qd = "DELETE FROM reports WHERE file_id=? AND type IN (%s)" % (",".join(["?"] * len(types)))
+        conn.execute(qd, (file_id, *types))
+    else:
+        rows = conn.execute("SELECT id FROM reports WHERE file_id=?", (file_id,)).fetchall()
+        for r in rows:
+            rid = int(r[0])
+            conn.execute("DELETE FROM reports_fts WHERE report_id=?", (rid,))
+        conn.execute("DELETE FROM reports WHERE file_id=?", (file_id,))
+    conn.commit()
+
+
 def delete_file_db(conn: sqlite3.Connection, file_id: int) -> None:
     # Remove reports and fts entries associated with this file
-    rows = conn.execute("SELECT id FROM reports WHERE file_id=?", (file_id,)).fetchall()
-    for r in rows:
-        rid = int(r[0])
-        conn.execute("DELETE FROM reports_fts WHERE report_id=?", (rid,))
-    conn.execute("DELETE FROM reports WHERE file_id=?", (file_id,))
+    delete_reports_by_file_db(conn, file_id)
     conn.execute("DELETE FROM files WHERE id=?", (file_id,))
     conn.commit()
 

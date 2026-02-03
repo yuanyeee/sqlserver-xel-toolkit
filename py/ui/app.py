@@ -36,6 +36,7 @@ from PySide6.QtWidgets import QDialog, QAbstractItemView, QCheckBox
 
 import markdown as mdlib
 import json
+import glob
 
 from .workspace import (
     RunRow,
@@ -58,7 +59,7 @@ from .cleanup_inputmd_dialog import CleanupInputMdDialog
 from .delete_run_dialog import DeleteRunDialog
 from .delete_file_dialog import DeleteFileDialog
 from .delete_report_dialog import DeleteReportDialog
-from .workspace import delete_run_db, delete_file_db, delete_report_db
+from .workspace import delete_run_db, delete_file_db, delete_report_db, delete_reports_by_file_db
 from .delete_utils import trash_paths
 from .workspace_select_dialog import WorkspaceSelectDialog
 
@@ -169,6 +170,62 @@ class RunWorker(QThread):
             self.finished_err.emit(str(e))
 
 
+class ReportRegenWorker(QThread):
+    log = Signal(str)
+    finished_ok = Signal(str)
+    finished_err = Signal(str)
+
+    def __init__(self, repo_root: str, *, out_dir: str, file_out_dir: str, source_xel: str, prefix: str, ranges_path: Optional[str]):
+        super().__init__()
+        self.repo_root = repo_root
+        self.out_dir = out_dir
+        self.file_out_dir = file_out_dir
+        self.source_xel = source_xel
+        self.prefix = prefix
+        self.ranges_path = ranges_path
+
+    def run(self):
+        try:
+            tmpdir = os.path.join(self.out_dir, "tmp")
+            deadlock = os.path.join(tmpdir, f"{self.prefix}_deadlock.jsonl")
+            blocking = os.path.join(tmpdir, f"{self.prefix}_blocking.jsonl")
+            slow = os.path.join(tmpdir, f"{self.prefix}_slow.jsonl")
+
+            args = [sys.executable, os.path.join(self.repo_root, "py", "generate_reports.py"), "--out", self.file_out_dir, "--source-xel", self.source_xel, "--prefix", self.prefix]
+            if os.path.exists(deadlock):
+                args += ["--deadlock-jsonl", deadlock]
+            if os.path.exists(blocking):
+                args += ["--blocking-jsonl", blocking]
+            if os.path.exists(slow):
+                args += ["--slowquery-jsonl", slow]
+
+            env = os.environ.copy()
+            if self.ranges_path and os.path.exists(self.ranges_path):
+                env["XEL_TOOLKIT_RANGES_JSON"] = self.ranges_path
+
+            self.log.emit("$ " + " ".join(args))
+            p = subprocess.Popen(
+                args,
+                cwd=self.repo_root,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                env=env,
+            )
+            assert p.stdout
+            for line in p.stdout:
+                self.log.emit(line.rstrip("\n"))
+            rc = p.wait()
+            if rc == 0:
+                self.finished_ok.emit(self.file_out_dir)
+            else:
+                self.finished_err.emit(f"generate_reports failed with code {rc}")
+        except Exception as e:
+            self.finished_err.emit(str(e))
+
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -229,6 +286,16 @@ class MainWindow(QMainWindow):
         act_new_run = QAction("新規実行…", self)
         act_new_run.triggered.connect(self.new_run)
         m_run.addAction(act_new_run)
+
+        act_regen_run = QAction("選択したRunのレポート再生成…", self)
+        act_regen_run.triggered.connect(self.regen_reports_for_selected_runs)
+        m_run.addAction(act_regen_run)
+
+        act_regen_file = QAction("選択したFileのレポート再生成…", self)
+        act_regen_file.triggered.connect(self.regen_reports_for_selected_files)
+        m_run.addAction(act_regen_file)
+
+        m_run.addSeparator()
 
         act_refresh = QAction("再読み込み", self)
         act_refresh.triggered.connect(self.reload_lists)
@@ -756,19 +823,56 @@ class MainWindow(QMainWindow):
         QMessageBox.critical(self, "Run failed", msg)
         self.reload_lists()
 
+    def _latest_prefix_from_tmp(self, run_out_dir: str) -> str | None:
+        tmpdir = os.path.join(run_out_dir, "tmp")
+        if not os.path.isdir(tmpdir):
+            return None
+
+        # Pick the most recently modified jsonl and strip known suffix
+        patterns = ["*_deadlock.jsonl", "*_blocking.jsonl", "*_slow.jsonl"]
+        cand: list[str] = []
+        for pat in patterns:
+            cand.extend(glob.glob(os.path.join(tmpdir, pat)))
+        if not cand:
+            return None
+
+        cand.sort(key=lambda p: os.path.getmtime(p), reverse=True)
+        fn = os.path.basename(cand[0])
+        for suf in ("_deadlock.jsonl", "_blocking.jsonl", "_slow.jsonl"):
+            if fn.endswith(suf):
+                return fn[: -len(suf)]
+        return None
+
+    def _clear_report_outputs(self, file_out_dir: str) -> None:
+        # Only remove report outputs; keep tmp/ and md/ folders
+        patterns = [
+            "*_deadlock_report.md",
+            "*_blocking_report.md",
+            "*_blocking.xlsx",
+            "*_slowquery_report.md",
+            "*_slowquery.xlsx",
+            "*.meta.json",
+        ]
+        for pat in patterns:
+            for p in glob.glob(os.path.join(file_out_dir, pat)):
+                try:
+                    os.remove(p)
+                except Exception:
+                    pass
+
+    def _read_span_meta(self, meta_for_path: str):
+        mp = meta_for_path + ".meta.json"
+        if not os.path.exists(mp):
+            return None, None
+        try:
+            with open(mp, "r", encoding="utf-8") as f:
+                obj = json.load(f) or {}
+            return obj.get("event_time_min"), obj.get("event_time_max")
+        except Exception:
+            return None, None
+
     def on_run_finished(self, xel_files: List[str], out_dir: str, slow: float):
         # Scan outputs and insert into DB
-
-        def _read_span(meta_for_path: str):
-            mp = meta_for_path + ".meta.json"
-            if not os.path.exists(mp):
-                return None, None
-            try:
-                with open(mp, "r", encoding="utf-8") as f:
-                    obj = json.load(f) or {}
-                return obj.get("event_time_min"), obj.get("event_time_max")
-            except Exception:
-                return None, None
 
         conn = connect_db(self.ws.db_path)
         try:
@@ -797,17 +901,17 @@ class MainWindow(QMainWindow):
                 for fn in sorted(os.listdir(subdir)):
                     p = os.path.join(subdir, fn)
                     if fn.endswith("_deadlock_report.md"):
-                        mn, mx = _read_span(p)
+                        mn, mx = self._read_span_meta(p)
                         add_report(conn, run_id=run_id, file_id=file_id, type_="deadlock", title=fn, md_path=p, xlsx_path=None, created_at=created_at, event_time_min=mn, event_time_max=mx)
                     elif fn.endswith("_slowquery_report.md"):
                         base = fn.replace("_slowquery_report.md", "")
                         xlsx = os.path.join(subdir, base + "_slowquery.xlsx")
-                        mn, mx = _read_span(p)
+                        mn, mx = self._read_span_meta(p)
                         add_report(conn, run_id=run_id, file_id=file_id, type_="slowquery", title=fn, md_path=p, xlsx_path=(xlsx if os.path.exists(xlsx) else None), created_at=created_at, event_time_min=mn, event_time_max=mx)
                     elif fn.endswith("_blocking_report.md"):
                         base = fn.replace("_blocking_report.md", "")
                         xlsx = os.path.join(subdir, base + "_blocking.xlsx")
-                        mn, mx = _read_span(p)
+                        mn, mx = self._read_span_meta(p)
                         add_report(conn, run_id=run_id, file_id=file_id, type_="blocking", title=fn, md_path=p, xlsx_path=(xlsx if os.path.exists(xlsx) else None), created_at=created_at, event_time_min=mn, event_time_max=mx)
 
                 # CSV/Excel generated MD items
@@ -825,8 +929,143 @@ class MainWindow(QMainWindow):
         finally:
             conn.close()
 
-        QMessageBox.information(self, "Done", f"Reports generated in: {out_dir}")
+        QMessageBox.information(self, "完了", f"レポート生成先: {out_dir}")
         self.reload_lists()
+
+    def _run_regen_for_file(self, *, run_id: int, file_id: int, run_out_dir: str, file_out_dir: str, source_xel: str):
+        if not self.ws:
+            return
+        prefix = self._latest_prefix_from_tmp(run_out_dir)
+        if not prefix:
+            QMessageBox.warning(self, "再生成", f"tmp/jsonl が見つからないためスキップしました。\n{run_out_dir}")
+            return
+
+        # Clear current outputs (keep tmp)
+        self._clear_report_outputs(file_out_dir)
+
+        # Remove existing report rows for this file (keep mditem)
+        conn = connect_db(self.ws.db_path)
+        try:
+            delete_reports_by_file_db(conn, file_id, types=["deadlock", "blocking", "slowquery"])
+        finally:
+            conn.close()
+
+        rp = self._ranges_path() if self.ws else None
+
+        self._regen_worker = ReportRegenWorker(
+            self.repo_root,
+            out_dir=run_out_dir,
+            file_out_dir=file_out_dir,
+            source_xel=source_xel,
+            prefix=prefix,
+            ranges_path=rp,
+        )
+        self._regen_worker.log.connect(self.append_log)
+
+        def _done(_):
+            # Re-scan just this file_out_dir and insert reports
+            conn2 = connect_db(self.ws.db_path)
+            try:
+                created_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                for fn in sorted(os.listdir(file_out_dir)):
+                    p = os.path.join(file_out_dir, fn)
+                    if fn.endswith("_deadlock_report.md"):
+                        mn, mx = self._read_span_meta(p)
+                        add_report(conn2, run_id=run_id, file_id=file_id, type_="deadlock", title=fn, md_path=p, xlsx_path=None, created_at=created_at, event_time_min=mn, event_time_max=mx)
+                    elif fn.endswith("_slowquery_report.md"):
+                        base = fn.replace("_slowquery_report.md", "")
+                        xlsx = os.path.join(file_out_dir, base + "_slowquery.xlsx")
+                        mn, mx = self._read_span_meta(p)
+                        add_report(conn2, run_id=run_id, file_id=file_id, type_="slowquery", title=fn, md_path=p, xlsx_path=(xlsx if os.path.exists(xlsx) else None), created_at=created_at, event_time_min=mn, event_time_max=mx)
+                    elif fn.endswith("_blocking_report.md"):
+                        base = fn.replace("_blocking_report.md", "")
+                        xlsx = os.path.join(file_out_dir, base + "_blocking.xlsx")
+                        mn, mx = self._read_span_meta(p)
+                        add_report(conn2, run_id=run_id, file_id=file_id, type_="blocking", title=fn, md_path=p, xlsx_path=(xlsx if os.path.exists(xlsx) else None), created_at=created_at, event_time_min=mn, event_time_max=mx)
+                conn2.commit()
+            finally:
+                conn2.close()
+
+            self.reload_lists()
+            QMessageBox.information(self, "再生成", f"レポートを再生成しました。\n{file_out_dir}")
+
+        def _err(msg: str):
+            QMessageBox.warning(self, "再生成", f"再生成に失敗しました\n{msg}")
+            self.reload_lists()
+
+        self._regen_worker.finished_ok.connect(_done)
+        self._regen_worker.finished_err.connect(_err)
+        self._regen_worker.start()
+
+    def regen_reports_for_selected_runs(self):
+        if not self.ws:
+            QMessageBox.warning(self, "再生成", "ワークスペースを開いてください")
+            return
+        items = self.run_list.selectedItems()
+        if not items:
+            QMessageBox.information(self, "再生成", "対象のRunを選択してください")
+            return
+        if len(items) > 1:
+            QMessageBox.information(self, "再生成", "現在は1つのRunのみ対応です（先頭のみ処理します）")
+
+        run_id = int(items[0].data(Qt.UserRole))
+
+        conn = connect_db(self.ws.db_path)
+        try:
+            r = conn.execute("SELECT out_dir FROM runs WHERE id=?", (run_id,)).fetchone()
+            if not r:
+                return
+            run_out_dir = r[0]
+            # Find source xel
+            src = conn.execute("SELECT path FROM inputs WHERE run_id=? ORDER BY id DESC LIMIT 1", (run_id,)).fetchone()
+            source_xel = src[0] if src else ""
+
+            files = conn.execute("SELECT id, out_dir FROM files WHERE run_id=? ORDER BY id DESC", (run_id,)).fetchall()
+            if not files:
+                QMessageBox.warning(self, "再生成", "このRunにはFileがありません")
+                return
+
+            # Only support one-by-one for now (keep UI simple)
+            fid, fout = int(files[0][0]), str(files[0][1])
+        finally:
+            conn.close()
+
+        if QMessageBox.question(self, "確認", "選択したRunのレポートを再生成しますか？\n(既存のレポートは上書きされます)") != QMessageBox.StandardButton.Yes:
+            return
+
+        self._run_regen_for_file(run_id=run_id, file_id=fid, run_out_dir=run_out_dir, file_out_dir=fout, source_xel=source_xel)
+
+    def regen_reports_for_selected_files(self):
+        if not self.ws:
+            QMessageBox.warning(self, "再生成", "ワークスペースを開いてください")
+            return
+        items = self.file_list.selectedItems()
+        if not items:
+            QMessageBox.information(self, "再生成", "対象のFileを選択してください")
+            return
+        if len(items) > 1:
+            QMessageBox.information(self, "再生成", "現在は1つのFileのみ対応です（先頭のみ処理します）")
+
+        file_id = int(items[0].data(Qt.UserRole))
+
+        conn = connect_db(self.ws.db_path)
+        try:
+            fr = conn.execute("SELECT run_id, out_dir FROM files WHERE id=?", (file_id,)).fetchone()
+            if not fr:
+                return
+            run_id = int(fr[0])
+            file_out_dir = str(fr[1])
+            rr = conn.execute("SELECT out_dir FROM runs WHERE id=?", (run_id,)).fetchone()
+            run_out_dir = rr[0] if rr else ""
+            src = conn.execute("SELECT path FROM inputs WHERE run_id=? ORDER BY id DESC LIMIT 1", (run_id,)).fetchone()
+            source_xel = src[0] if src else ""
+        finally:
+            conn.close()
+
+        if QMessageBox.question(self, "確認", "選択したFileのレポートを再生成しますか？\n(既存のレポートは上書きされます)") != QMessageBox.StandardButton.Yes:
+            return
+
+        self._run_regen_for_file(run_id=run_id, file_id=file_id, run_out_dir=run_out_dir, file_out_dir=file_out_dir, source_xel=source_xel)
 
 
 def main():
