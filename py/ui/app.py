@@ -83,6 +83,13 @@ def _hash8(s: str) -> str:
     return hashlib.sha256(s.encode("utf-8", errors="ignore")).hexdigest()[:8]
 
 
+def inputmd_dir(workspace_root: str, input_path: str) -> str:
+    """Stable per-file inputMD dir to avoid collisions (uses path hash)."""
+    key = _hash8(str(Path(input_path).resolve()))
+    safe = _safe_stem(input_path)
+    return str(Path(workspace_root) / "inputMD" / f"{safe}_{key}")
+
+
 def stable_run_dir(workspace_root: str, input_path: str) -> str:
     key = _hash8(str(Path(input_path).resolve()))
     safe = _safe_stem(input_path)
@@ -124,6 +131,10 @@ class RunWorker(QThread):
                 env["XEL_TOOLKIT_WORKSPACE"] = self.workspace_root
             if self.ranges_path and os.path.exists(self.ranges_path):
                 env["XEL_TOOLKIT_RANGES_JSON"] = self.ranges_path
+
+            # inputMD overwrite/append mode (shared config)
+            if os.environ.get("XEL_TOOLKIT_INPUTMD_MODE"):
+                env["XEL_TOOLKIT_INPUTMD_MODE"] = os.environ.get("XEL_TOOLKIT_INPUTMD_MODE")
 
             # Windows cannot execute .sh directly; use PowerShell runner.
             if os.name == "nt":
@@ -286,10 +297,6 @@ class MainWindow(QMainWindow):
         act_new_run = QAction("新規実行…", self)
         act_new_run.triggered.connect(self.new_run)
         m_run.addAction(act_new_run)
-
-        act_regen_run = QAction("選択したRunのレポート再生成…", self)
-        act_regen_run.triggered.connect(self.regen_reports_for_selected_runs)
-        m_run.addAction(act_regen_run)
 
         act_regen_file = QAction("選択したFileのレポート再生成…", self)
         act_regen_file.triggered.connect(self.regen_reports_for_selected_files)
@@ -773,6 +780,43 @@ class MainWindow(QMainWindow):
         # Settings dialog (minimal): ask slow threshold
         slow = 3.0
 
+        # inputMD overwrite/append
+        from .settings import load_config, save_config
+        cfg = load_config()
+
+        # Detect existing inputMD for selected files (path-based)
+        existing = []
+        for x in files:
+            d = inputmd_dir(self.ws.root, x)
+            if os.path.isdir(d) and os.listdir(d):
+                existing.append(d)
+
+        if existing and cfg.confirm_inputmd_overwrite:
+            mb = QMessageBox(self)
+            mb.setWindowTitle("inputMD")
+            mb.setIcon(QMessageBox.Icon.Warning)
+            mb.setText("同じ入力（パス一致）の inputMD が既に存在します。\nどう処理しますか？")
+            mb.setInformativeText("デフォルト: 上書き（既存inputMDを削除して再生成）\n\n対象: " + "\n".join(existing[:5]) + ("\n..." if len(existing) > 5 else ""))
+            btn_over = mb.addButton("上書き", QMessageBox.ButtonRole.AcceptRole)
+            btn_app = mb.addButton("追記", QMessageBox.ButtonRole.DestructiveRole)
+            mb.addButton("キャンセル", QMessageBox.ButtonRole.RejectRole)
+            chk = QCheckBox("次回から確認しない", mb)
+            mb.setCheckBox(chk)
+            mb.exec()
+            clicked = mb.clickedButton()
+            if clicked == btn_over:
+                cfg.inputmd_mode = "overwrite"
+            elif clicked == btn_app:
+                cfg.inputmd_mode = "append"
+            else:
+                return
+            if chk.isChecked():
+                cfg.confirm_inputmd_overwrite = False
+            save_config(cfg)
+
+        # Export current mode to runner
+        os.environ["XEL_TOOLKIT_INPUTMD_MODE"] = cfg.inputmd_mode
+
         # Process each selected file into a stable per-file run folder (overwrite old results)
         self._run_queue = list(files)
         self.preview.setPlainText("Running... see log below\n")
@@ -996,44 +1040,6 @@ class MainWindow(QMainWindow):
         self._regen_worker.finished_ok.connect(_done)
         self._regen_worker.finished_err.connect(_err)
         self._regen_worker.start()
-
-    def regen_reports_for_selected_runs(self):
-        if not self.ws:
-            QMessageBox.warning(self, "再生成", "ワークスペースを開いてください")
-            return
-        items = self.run_list.selectedItems()
-        if not items:
-            QMessageBox.information(self, "再生成", "対象のRunを選択してください")
-            return
-        if len(items) > 1:
-            QMessageBox.information(self, "再生成", "現在は1つのRunのみ対応です（先頭のみ処理します）")
-
-        run_id = int(items[0].data(Qt.UserRole))
-
-        conn = connect_db(self.ws.db_path)
-        try:
-            r = conn.execute("SELECT out_dir FROM runs WHERE id=?", (run_id,)).fetchone()
-            if not r:
-                return
-            run_out_dir = r[0]
-            # Find source xel
-            src = conn.execute("SELECT path FROM inputs WHERE run_id=? ORDER BY id DESC LIMIT 1", (run_id,)).fetchone()
-            source_xel = src[0] if src else ""
-
-            files = conn.execute("SELECT id, out_dir FROM files WHERE run_id=? ORDER BY id DESC", (run_id,)).fetchall()
-            if not files:
-                QMessageBox.warning(self, "再生成", "このRunにはFileがありません")
-                return
-
-            # Only support one-by-one for now (keep UI simple)
-            fid, fout = int(files[0][0]), str(files[0][1])
-        finally:
-            conn.close()
-
-        if QMessageBox.question(self, "確認", "選択したRunのレポートを再生成しますか？\n(既存のレポートは上書きされます)") != QMessageBox.StandardButton.Yes:
-            return
-
-        self._run_regen_for_file(run_id=run_id, file_id=fid, run_out_dir=run_out_dir, file_out_dir=fout, source_xel=source_xel)
 
     def regen_reports_for_selected_files(self):
         if not self.ws:

@@ -132,11 +132,20 @@ function RunOne([string]$path) {
     $runTag = (Get-Date).ToString('yyyyMMdd_HHmmss')
     $ws = $env:XEL_TOOLKIT_WORKSPACE
     if (-not [string]::IsNullOrWhiteSpace($ws)) {
-      $inputMd = Join-Path (Join-Path $ws 'inputMD') $safeBase
+      $inputmdMode = $env:XEL_TOOLKIT_INPUTMD_MODE
+      if ([string]::IsNullOrWhiteSpace($inputmdMode)) { $inputmdMode = 'overwrite' }
+      $fileHash = Hash8 (Resolve-Path -LiteralPath $path | Select-Object -ExpandProperty Path)
+      $inputMd = Join-Path (Join-Path $ws 'inputMD') ("${safeBase}_${fileHash}")
+      if ($inputmdMode -eq 'overwrite' -and (Test-Path $inputMd)) {
+        Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $inputMd
+      }
       New-Item -ItemType Directory -Force -Path $inputMd | Out-Null
+      # NOTE: inputMD is unfiltered; ignore ranges-json for csv/excel export
+      $oldRanges = $env:XEL_TOOLKIT_RANGES_JSON
+      $env:XEL_TOOLKIT_RANGES_JSON = $null
       $cmd = @('python', (Join-Path $RepoRoot 'py/csv_excel_to_md.py'), '--in', $path, '--out', $inputMd, '--run-tag', $runTag)
-      if ($env:XEL_TOOLKIT_RANGES_JSON) { $cmd += @('--ranges-json', $env:XEL_TOOLKIT_RANGES_JSON) }
       & $PyExe @($PyPrefix + @($cmd[1..($cmd.Count-1)])) | Out-Null
+      $env:XEL_TOOLKIT_RANGES_JSON = $oldRanges
     } else {
       $md = Join-Path $fileOut 'md'
       New-Item -ItemType Directory -Force -Path $md | Out-Null
@@ -159,7 +168,13 @@ function RunOne([string]$path) {
   if (Test-JsonlNonEmpty $deadlockJsonl) {
     $key = Hash8 $prefix
     if (-not [string]::IsNullOrWhiteSpace($ws)) {
-      $out = Join-Path (Join-Path $ws 'inputMD') $safeBase
+      $inputmdMode = $env:XEL_TOOLKIT_INPUTMD_MODE
+      if ([string]::IsNullOrWhiteSpace($inputmdMode)) { $inputmdMode = 'overwrite' }
+      $fileHash = Hash8 (Resolve-Path -LiteralPath $path | Select-Object -ExpandProperty Path)
+      $out = Join-Path (Join-Path $ws 'inputMD') ("${safeBase}_${fileHash}")
+      if ($inputmdMode -eq 'overwrite' -and (Test-Path $out)) {
+        Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $out
+      }
       # NOTE: inputMD is unfiltered (always export all events to markdown)
       $oldRanges = $env:XEL_TOOLKIT_RANGES_JSON
       $env:XEL_TOOLKIT_RANGES_JSON = $null
@@ -182,6 +197,13 @@ function RunOne([string]$path) {
     if (-not [string]::IsNullOrWhiteSpace($ws)) {
       $out = Join-Path (Join-Path $ws 'inputMD') $safeBase
       # NOTE: inputMD is unfiltered (always export all events to markdown)
+      $inputmdMode = $env:XEL_TOOLKIT_INPUTMD_MODE
+      if ([string]::IsNullOrWhiteSpace($inputmdMode)) { $inputmdMode = 'overwrite' }
+      $fileHash = Hash8 (Resolve-Path -LiteralPath $path | Select-Object -ExpandProperty Path)
+      $out = Join-Path (Join-Path $ws 'inputMD') ("${safeBase}_${fileHash}")
+      if ($inputmdMode -eq 'overwrite' -and (Test-Path $out)) {
+        Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $out
+      }
       $oldRanges = $env:XEL_TOOLKIT_RANGES_JSON
       $env:XEL_TOOLKIT_RANGES_JSON = $null
       $cmd = @('python', (Join-Path $RepoRoot 'py/xel_to_md.py'), '--jsonl', $blockingJsonl, '--out', $out, '--key', $key, '--event', 'blocked_process_report', '--source', $path)
@@ -211,6 +233,13 @@ function RunOne([string]$path) {
     $key = Hash8 $prefix
     if (-not [string]::IsNullOrWhiteSpace($ws)) {
       $out = Join-Path (Join-Path $ws 'inputMD') $safeBase
+      $inputmdMode = $env:XEL_TOOLKIT_INPUTMD_MODE
+      if ([string]::IsNullOrWhiteSpace($inputmdMode)) { $inputmdMode = 'overwrite' }
+      $fileHash = Hash8 (Resolve-Path -LiteralPath $path | Select-Object -ExpandProperty Path)
+      $out = Join-Path (Join-Path $ws 'inputMD') ("${safeBase}_${fileHash}")
+      if ($inputmdMode -eq 'overwrite' -and (Test-Path $out)) {
+        Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $out
+      }
       # NOTE: inputMD is unfiltered (always export all events to markdown)
       $oldRanges = $env:XEL_TOOLKIT_RANGES_JSON
       $env:XEL_TOOLKIT_RANGES_JSON = $null

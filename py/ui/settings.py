@@ -13,6 +13,8 @@ CONFIG_PATH = APP_DIR / "config.json"
 @dataclass
 class AppConfig:
     recent_workspaces: List[str]
+    inputmd_mode: str  # "overwrite" | "append"
+    confirm_inputmd_overwrite: bool
 
 
 def _load_raw() -> Dict[str, Any]:
@@ -26,13 +28,25 @@ def _load_raw() -> Dict[str, Any]:
 
 def load_config() -> AppConfig:
     raw = _load_raw()
-    return AppConfig(recent_workspaces=list(raw.get("recent_workspaces", []) or []))
+    return AppConfig(
+        recent_workspaces=list(raw.get("recent_workspaces", []) or []),
+        inputmd_mode=str(raw.get("inputmd_mode", "overwrite") or "overwrite"),
+        confirm_inputmd_overwrite=bool(raw.get("confirm_inputmd_overwrite", True)),
+    )
 
 
 def save_config(cfg: AppConfig) -> None:
     APP_DIR.mkdir(parents=True, exist_ok=True)
     CONFIG_PATH.write_text(
-        json.dumps({"recent_workspaces": cfg.recent_workspaces}, ensure_ascii=False, indent=2),
+        json.dumps(
+            {
+                "recent_workspaces": cfg.recent_workspaces,
+                "inputmd_mode": cfg.inputmd_mode,
+                "confirm_inputmd_overwrite": cfg.confirm_inputmd_overwrite,
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
         encoding="utf-8",
     )
 
