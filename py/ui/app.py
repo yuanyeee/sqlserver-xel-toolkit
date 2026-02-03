@@ -216,55 +216,55 @@ class MainWindow(QMainWindow):
         # Menus (reduce toolbar clutter)
         mbar = self.menuBar()
 
-        m_ws = mbar.addMenu("Workspace")
-        act_open_ws = QAction("Open…", self)
+        m_ws = mbar.addMenu("ワークスペース")
+        act_open_ws = QAction("開く…", self)
         act_open_ws.triggered.connect(self.open_workspace)
         m_ws.addAction(act_open_ws)
 
-        act_change_ws = QAction("Switch…", self)
+        act_change_ws = QAction("切り替え…", self)
         act_change_ws.triggered.connect(self.change_workspace)
         m_ws.addAction(act_change_ws)
 
-        m_run = mbar.addMenu("Run")
-        act_new_run = QAction("New Run…", self)
+        m_run = mbar.addMenu("実行")
+        act_new_run = QAction("新規実行…", self)
         act_new_run.triggered.connect(self.new_run)
         m_run.addAction(act_new_run)
 
-        act_refresh = QAction("Refresh", self)
+        act_refresh = QAction("再読み込み", self)
         act_refresh.triggered.connect(self.reload_lists)
         m_run.addAction(act_refresh)
 
-        m_ranges = mbar.addMenu("Ranges")
-        act_edit_ranges = QAction("Edit ranges…", self)
+        m_ranges = mbar.addMenu("時間範囲")
+        act_edit_ranges = QAction("編集…", self)
         act_edit_ranges.triggered.connect(self.open_time_ranges)
         m_ranges.addAction(act_edit_ranges)
 
-        self.act_apply_ranges = QAction("Apply ranges to view", self)
+        self.act_apply_ranges = QAction("表示に適用", self)
         self.act_apply_ranges.setCheckable(True)
         self.act_apply_ranges.setChecked(True)
         self.act_apply_ranges.triggered.connect(lambda _: self.reload_lists())
         m_ranges.addAction(self.act_apply_ranges)
 
-        m_tools = mbar.addMenu("Tools")
-        act_open_it = QAction("Open IntegratedTool", self)
+        m_tools = mbar.addMenu("ツール")
+        act_open_it = QAction("統合ツールを開く", self)
         act_open_it.triggered.connect(self.open_integratedtool)
         m_tools.addAction(act_open_it)
 
-        m_maint = mbar.addMenu("Maintenance")
-        act_cleanup = QAction("Cleanup inputMD…", self)
+        m_maint = mbar.addMenu("メンテナンス")
+        act_cleanup = QAction("inputMD をクリーンアップ…", self)
         act_cleanup.triggered.connect(self.cleanup_inputmd)
         m_maint.addAction(act_cleanup)
 
-        m_del = mbar.addMenu("Delete")
-        act_del_run = QAction("Delete Run…", self)
+        m_del = mbar.addMenu("削除")
+        act_del_run = QAction("Run を削除…", self)
         act_del_run.triggered.connect(self.delete_selected_run)
         m_del.addAction(act_del_run)
 
-        act_del_file = QAction("Delete File…", self)
+        act_del_file = QAction("File を削除…", self)
         act_del_file.triggered.connect(self.delete_selected_file)
         m_del.addAction(act_del_file)
 
-        act_del_report = QAction("Delete Report…", self)
+        act_del_report = QAction("Report を削除…", self)
         act_del_report.triggered.connect(self.delete_selected_report)
         m_del.addAction(act_del_report)
 
@@ -272,23 +272,23 @@ class MainWindow(QMainWindow):
         tb = QToolBar("Main")
         self.addToolBar(tb)
 
-        btn_ws = QPushButton("Workspace…")
+        btn_ws = QPushButton("ワークスペース…")
         btn_ws.clicked.connect(self.change_workspace)
         tb.addWidget(btn_ws)
 
-        btn_new_run = QPushButton("New Run")
+        btn_new_run = QPushButton("新規実行")
         btn_new_run.clicked.connect(self.new_run)
         tb.addWidget(btn_new_run)
 
-        btn_ranges = QPushButton("Ranges…")
+        btn_ranges = QPushButton("時間範囲…")
         btn_ranges.clicked.connect(self.open_time_ranges)
         tb.addWidget(btn_ranges)
 
-        btn_refresh = QPushButton("Refresh")
+        btn_refresh = QPushButton("再読み込み")
         btn_refresh.clicked.connect(self.reload_lists)
         tb.addWidget(btn_refresh)
 
-        btn_it = QPushButton("IntegratedTool")
+        btn_it = QPushButton("統合ツール")
         btn_it.clicked.connect(self.open_integratedtool)
         tb.addWidget(btn_it)
 
