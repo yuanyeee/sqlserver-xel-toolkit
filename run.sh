@@ -61,6 +61,16 @@ if [[ ${#xel_files[@]} -eq 0 ]]; then
   exit 2
 fi
 
+detect_nonempty_jsonl() {
+  local f="$1"
+  if [[ -f "$f" ]] && [[ -s "$f" ]]; then
+    if grep -q "[^[:space:]]" "$f"; then
+      return 0
+    fi
+  fi
+  return 1
+}
+
 run_one() {
   local xel="$1"
   local ext
@@ -86,7 +96,6 @@ run_one() {
 
   # Branch by input type
   if [[ "$ext" == "csv" || "$ext" == "CSV" || "$ext" == "xlsx" || "$ext" == "xls" || "$ext" == "XLSX" || "$ext" == "XLS" ]]; then
-    # CSV/Excel -> per-row MD (unified under workspace inputMD if provided)
     local RUN_TAG
     RUN_TAG="$(date +%Y%m%d_%H%M%S)"
 
@@ -110,47 +119,25 @@ run_one() {
   # XEL: Always generate summary (per input folder)
   "$DOTNET" run --project "$REPO_ROOT/src/XelDump" -- "$xel" -o "$FILE_OUT" --max 2000 >/dev/null
 
+  # Content-based detection (do not rely on filename)
+  local WS
+  WS="${XEL_TOOLKIT_WORKSPACE:-}"
+
   # Deadlock
-  if [[ "$base" == *deadlock* ]]; then
+  local deadlock_jsonl
+  deadlock_jsonl="$OUT_DIR/tmp/${prefix}_deadlock.jsonl"
+  "$DOTNET" run --project "$REPO_ROOT/src/XelDump" -- "$xel" --export-jsonl "$deadlock_jsonl" --filter xml_deadlock_report >/dev/null || true
+
+  if detect_nonempty_jsonl "$deadlock_jsonl"; then
     local KEY
     KEY="$(echo "$prefix" | shasum -a 256 | awk '{print substr($1,1,8)}')"
-    "$DOTNET" run --project "$REPO_ROOT/src/XelDump" -- "$xel" --export-jsonl "$OUT_DIR/tmp/${prefix}_deadlock.jsonl" --filter xml_deadlock_report >/dev/null
 
-    # Generate per-event MD into inputMD (workspace-aware)
-    local WS
-    WS="${XEL_TOOLKIT_WORKSPACE:-}"
     if [[ -n "$WS" ]]; then
-      python3 "$REPO_ROOT/py/xel_to_md.py" --jsonl "$OUT_DIR/tmp/${prefix}_deadlock.jsonl" --out "$WS/inputMD/$safe_base" --key "$KEY" --event xml_deadlock_report --source "$xel" ${START_JST:+--start "$START_JST"} ${END_JST:+--end "$END_JST"} ${XEL_TOOLKIT_RANGES_JSON:+--ranges-json "$XEL_TOOLKIT_RANGES_JSON"} >/dev/null
+      python3 "$REPO_ROOT/py/xel_to_md.py" --jsonl "$deadlock_jsonl" --out "$WS/inputMD/$safe_base" --key "$KEY" --event xml_deadlock_report --source "$xel" ${START_JST:+--start "$START_JST"} ${END_JST:+--end "$END_JST"} ${XEL_TOOLKIT_RANGES_JSON:+--ranges-json "$XEL_TOOLKIT_RANGES_JSON"} >/dev/null
     fi
 
     python3 "$REPO_ROOT/py/generate_reports.py" \
-      --deadlock-jsonl "$OUT_DIR/tmp/${prefix}_deadlock.jsonl" \
-      --source-xel "$xel" \
-      --prefix "$prefix" \
-      --out "$FILE_OUT" \
-      ${START_JST:+--start "$START_JST"} \
-      ${END_JST:+--end "$END_JST"} \
-      ${XEL_TOOLKIT_RANGES_JSON:+--ranges-json "$XEL_TOOLKIT_RANGES_JSON"} >/dev/null
-  fi
-
-  # Slow queries
-  if [[ "$base" == *Slow_Queries* || "$base" == *slow* ]]; then
-    local KEY
-    KEY="$(echo "$prefix" | shasum -a 256 | awk '{print substr($1,1,8)}')"
-    "$DOTNET" run --project "$REPO_ROOT/src/XelDump" -- "$xel" --export-jsonl "$OUT_DIR/tmp/${prefix}_slow.jsonl" >/dev/null
-
-    # Generate per-event MD into inputMD (workspace-aware)
-    local WS
-    WS="${XEL_TOOLKIT_WORKSPACE:-}"
-    if [[ -n "$WS" ]]; then
-      # includes both rpc_completed and sql_batch_completed
-      python3 "$REPO_ROOT/py/xel_to_md.py" --jsonl "$OUT_DIR/tmp/${prefix}_slow.jsonl" --out "$WS/inputMD/$safe_base" --key "$KEY" --event rpc_completed --source "$xel" ${START_JST:+--start "$START_JST"} ${END_JST:+--end "$END_JST"} ${XEL_TOOLKIT_RANGES_JSON:+--ranges-json "$XEL_TOOLKIT_RANGES_JSON"} >/dev/null
-      python3 "$REPO_ROOT/py/xel_to_md.py" --jsonl "$OUT_DIR/tmp/${prefix}_slow.jsonl" --out "$WS/inputMD/$safe_base" --key "$KEY" --event sql_batch_completed --source "$xel" ${START_JST:+--start "$START_JST"} ${END_JST:+--end "$END_JST"} ${XEL_TOOLKIT_RANGES_JSON:+--ranges-json "$XEL_TOOLKIT_RANGES_JSON"} >/dev/null
-    fi
-
-    python3 "$REPO_ROOT/py/generate_reports.py" \
-      --slowquery-jsonl "$OUT_DIR/tmp/${prefix}_slow.jsonl" \
-      --slow-threshold "$SLOW_THRESHOLD" \
+      --deadlock-jsonl "$deadlock_jsonl" \
       --source-xel "$xel" \
       --prefix "$prefix" \
       --out "$FILE_OUT" \
@@ -160,20 +147,20 @@ run_one() {
   fi
 
   # Blocking
-  if [[ "$base" == *blocking* ]]; then
+  local blocking_jsonl
+  blocking_jsonl="$OUT_DIR/tmp/${prefix}_blocking.jsonl"
+  "$DOTNET" run --project "$REPO_ROOT/src/XelDump" -- "$xel" --export-jsonl "$blocking_jsonl" --filter blocked_process_report >/dev/null || true
+
+  if detect_nonempty_jsonl "$blocking_jsonl"; then
     local KEY
     KEY="$(echo "$prefix" | shasum -a 256 | awk '{print substr($1,1,8)}')"
-    "$DOTNET" run --project "$REPO_ROOT/src/XelDump" -- "$xel" --export-jsonl "$OUT_DIR/tmp/${prefix}_blocking.jsonl" --filter blocked_process_report >/dev/null
 
-    # Generate per-event MD into inputMD (workspace-aware)
-    local WS
-    WS="${XEL_TOOLKIT_WORKSPACE:-}"
     if [[ -n "$WS" ]]; then
-      python3 "$REPO_ROOT/py/xel_to_md.py" --jsonl "$OUT_DIR/tmp/${prefix}_blocking.jsonl" --out "$WS/inputMD/$safe_base" --key "$KEY" --event blocked_process_report --source "$xel" ${START_JST:+--start "$START_JST"} ${END_JST:+--end "$END_JST"} ${XEL_TOOLKIT_RANGES_JSON:+--ranges-json "$XEL_TOOLKIT_RANGES_JSON"} >/dev/null
+      python3 "$REPO_ROOT/py/xel_to_md.py" --jsonl "$blocking_jsonl" --out "$WS/inputMD/$safe_base" --key "$KEY" --event blocked_process_report --source "$xel" ${START_JST:+--start "$START_JST"} ${END_JST:+--end "$END_JST"} ${XEL_TOOLKIT_RANGES_JSON:+--ranges-json "$XEL_TOOLKIT_RANGES_JSON"} >/dev/null
     fi
 
     python3 "$REPO_ROOT/py/generate_reports.py" \
-      --blocking-jsonl "$OUT_DIR/tmp/${prefix}_blocking.jsonl" \
+      --blocking-jsonl "$blocking_jsonl" \
       --source-xel "$xel" \
       --prefix "$prefix" \
       --out "$FILE_OUT" \
@@ -181,6 +168,44 @@ run_one() {
       ${END_JST:+--end "$END_JST"} \
       ${XEL_TOOLKIT_RANGES_JSON:+--ranges-json "$XEL_TOOLKIT_RANGES_JSON"} >/dev/null
   fi
+
+  # SlowQuery (rpc_completed + sql_batch_completed)
+  local slow_jsonl
+  slow_jsonl="$OUT_DIR/tmp/${prefix}_slow.jsonl"
+  rm -f "$slow_jsonl" || true
+
+  local slow_rpc
+  slow_rpc="$OUT_DIR/tmp/${prefix}_slow_rpc.jsonl"
+  "$DOTNET" run --project "$REPO_ROOT/src/XelDump" -- "$xel" --export-jsonl "$slow_rpc" --filter rpc_completed >/dev/null || true
+
+  local slow_batch
+  slow_batch="$OUT_DIR/tmp/${prefix}_slow_batch.jsonl"
+  "$DOTNET" run --project "$REPO_ROOT/src/XelDump" -- "$xel" --export-jsonl "$slow_batch" --filter sql_batch_completed >/dev/null || true
+
+  if [[ -f "$slow_rpc" ]]; then cat "$slow_rpc" >> "$slow_jsonl"; fi
+  if [[ -f "$slow_batch" ]]; then cat "$slow_batch" >> "$slow_jsonl"; fi
+
+  if detect_nonempty_jsonl "$slow_jsonl"; then
+    local KEY
+    KEY="$(echo "$prefix" | shasum -a 256 | awk '{print substr($1,1,8)}')"
+
+    if [[ -n "$WS" ]]; then
+      python3 "$REPO_ROOT/py/xel_to_md.py" --jsonl "$slow_jsonl" --out "$WS/inputMD/$safe_base" --key "$KEY" --event rpc_completed --source "$xel" ${START_JST:+--start "$START_JST"} ${END_JST:+--end "$END_JST"} ${XEL_TOOLKIT_RANGES_JSON:+--ranges-json "$XEL_TOOLKIT_RANGES_JSON"} >/dev/null
+      python3 "$REPO_ROOT/py/xel_to_md.py" --jsonl "$slow_jsonl" --out "$WS/inputMD/$safe_base" --key "$KEY" --event sql_batch_completed --source "$xel" ${START_JST:+--start "$START_JST"} ${END_JST:+--end "$END_JST"} ${XEL_TOOLKIT_RANGES_JSON:+--ranges-json "$XEL_TOOLKIT_RANGES_JSON"} >/dev/null
+    fi
+
+    python3 "$REPO_ROOT/py/generate_reports.py" \
+      --slowquery-jsonl "$slow_jsonl" \
+      --slow-threshold "$SLOW_THRESHOLD" \
+      --source-xel "$xel" \
+      --prefix "$prefix" \
+      --out "$FILE_OUT" \
+      ${START_JST:+--start "$START_JST"} \
+      ${END_JST:+--end "$END_JST"} \
+      ${XEL_TOOLKIT_RANGES_JSON:+--ranges-json "$XEL_TOOLKIT_RANGES_JSON"} >/dev/null
+  fi
+
+  rm -f "$slow_rpc" "$slow_batch" || true
 
   echo "   Done: $prefix"
 }
