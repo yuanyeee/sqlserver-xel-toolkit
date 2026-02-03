@@ -3,6 +3,9 @@ from __future__ import annotations
 import os
 import sys
 import subprocess
+import hashlib
+import shutil
+from pathlib import Path
 from dataclasses import dataclass
 from datetime import datetime
 from typing import List, Optional
@@ -59,6 +62,39 @@ from .delete_utils import trash_paths
 class WorkspaceState:
     root: str
     db_path: str
+
+
+def _safe_stem(path: str) -> str:
+    s = Path(path).name
+    if "." in s:
+        s = s.rsplit(".", 1)[0]
+    import re
+    s = re.sub(r"[^A-Za-z0-9._-]+", "_", s).strip("._-")
+    return s or "input"
+
+
+def _hash8(s: str) -> str:
+    return hashlib.sha256(s.encode("utf-8", errors="ignore")).hexdigest()[:8]
+
+
+def stable_run_dir(workspace_root: str, input_path: str) -> str:
+    key = _hash8(str(Path(input_path).resolve()))
+    safe = _safe_stem(input_path)
+    return str(Path(workspace_root) / "runs" / f"{safe}_{key}")
+
+
+def clear_dir(path: str) -> None:
+    p = Path(path)
+    if not p.exists():
+        return
+    for child in p.iterdir():
+        try:
+            if child.is_dir():
+                shutil.rmtree(child)
+            else:
+                child.unlink()
+        except Exception:
+            pass
 
 
 class RunWorker(QThread):
@@ -537,25 +573,49 @@ class MainWindow(QMainWindow):
         if not files:
             return
 
-        # Settings dialog (minimal): ask slow threshold and output dir
+        # Settings dialog (minimal): ask slow threshold
         slow = 3.0
-        out_dir = os.path.join(self.ws.root, "runs", datetime.now().strftime("%Y%m%d_%H%M%S"))
-        os.makedirs(out_dir, exist_ok=True)
 
-        # Run in background
-        self.worker = RunWorker(
-            self.repo_root,
-            files,
-            out_dir,
-            slow,
-            self.ws.root if self.ws else None,
-            self._ranges_path() if self.ws else None,
-        )
-        self.worker.log.connect(self.append_log)
-        self.worker.finished_ok.connect(lambda _: self.on_run_finished(files, out_dir, slow))
-        self.worker.finished_err.connect(self.on_run_error)
+        # Process each selected file into a stable per-file run folder (overwrite old results)
+        self._run_queue = list(files)
         self.preview.setPlainText("Running... see log below\n")
-        self.worker.start()
+
+        def start_next():
+            if not self._run_queue:
+                self.reload_lists()
+                return
+
+            x = self._run_queue.pop(0)
+            out_dir = stable_run_dir(self.ws.root, x)
+            os.makedirs(out_dir, exist_ok=True)
+            clear_dir(out_dir)
+
+            self.worker = RunWorker(
+                self.repo_root,
+                [x],
+                out_dir,
+                slow,
+                self.ws.root if self.ws else None,
+                self._ranges_path() if self.ws else None,
+            )
+            self.worker.log.connect(self.append_log)
+            self.worker.finished_ok.connect(lambda _: self.on_run_finished([x], out_dir, slow))
+
+            def _err(msg: str):
+                self.append_log(f"ERROR: {msg}")
+                # continue with remaining files
+                start_next()
+
+            self.worker.finished_err.connect(_err)
+
+            def _ok(_: str):
+                # continue with remaining files
+                start_next()
+
+            self.worker.finished_ok.connect(_ok)
+            self.worker.start()
+
+        start_next()
 
     def append_log(self, line: str):
         # append to preview temporarily
