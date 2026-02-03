@@ -850,46 +850,29 @@ class MainWindow(QMainWindow):
         # Export current mode to runner
         os.environ["XEL_TOOLKIT_INPUTMD_MODE"] = cfg.inputmd_mode
 
-        # Process each selected file into a stable per-file run folder (overwrite old results)
-        self._run_queue = list(files)
+        # One Run per click (Run 1:N File). Runner handles multiple inputs and generates per-file subfolders.
+        out_dir = os.path.join(self.ws.root, "runs", datetime.now().strftime("%Y%m%d_%H%M%S"))
+        os.makedirs(out_dir, exist_ok=True)
+
         self.preview.setPlainText("Running... see log below\n")
 
-        def start_next():
-            if not self._run_queue:
-                self.reload_lists()
-                return
+        self.worker = RunWorker(
+            self.repo_root,
+            files,
+            out_dir,
+            slow,
+            self.ws.root if self.ws else None,
+            self._ranges_path() if self.ws else None,
+        )
+        self.worker.log.connect(self.append_log)
 
-            x = self._run_queue.pop(0)
-            out_dir = stable_run_dir(self.ws.root, x)
-            os.makedirs(out_dir, exist_ok=True)
-            clear_dir(out_dir)
+        def _err(msg: str):
+            QMessageBox.warning(self, "実行", f"失敗しました\n{msg}")
+            self.reload_lists()
 
-            self.worker = RunWorker(
-                self.repo_root,
-                [x],
-                out_dir,
-                slow,
-                self.ws.root if self.ws else None,
-                self._ranges_path() if self.ws else None,
-            )
-            self.worker.log.connect(self.append_log)
-            self.worker.finished_ok.connect(lambda _: self.on_run_finished([x], out_dir, slow))
-
-            def _err(msg: str):
-                self.append_log(f"ERROR: {msg}")
-                # continue with remaining files
-                start_next()
-
-            self.worker.finished_err.connect(_err)
-
-            def _ok(_: str):
-                # continue with remaining files
-                start_next()
-
-            self.worker.finished_ok.connect(_ok)
-            self.worker.start()
-
-        start_next()
+        self.worker.finished_err.connect(_err)
+        self.worker.finished_ok.connect(lambda _: self.on_run_finished(files, out_dir, slow))
+        self.worker.start()
 
     def append_log(self, line: str):
         # append to preview temporarily
@@ -900,13 +883,17 @@ class MainWindow(QMainWindow):
         QMessageBox.critical(self, "Run failed", msg)
         self.reload_lists()
 
-    def _latest_prefix_from_tmp(self, run_out_dir: str) -> str | None:
+    def _latest_prefix_from_tmp(self, run_out_dir: str, *, file_hash: str) -> str | None:
         tmpdir = os.path.join(run_out_dir, "tmp")
         if not os.path.isdir(tmpdir):
             return None
 
-        # Pick the most recently modified jsonl and strip known suffix
-        patterns = ["*_deadlock.jsonl", "*_blocking.jsonl", "*_slow.jsonl"]
+        # Pick most recent jsonl for this file (prefix includes file_hash)
+        patterns = [
+            f"*_{file_hash}_*_deadlock.jsonl",
+            f"*_{file_hash}_*_blocking.jsonl",
+            f"*_{file_hash}_*_slow.jsonl",
+        ]
         cand: list[str] = []
         for pat in patterns:
             cand.extend(glob.glob(os.path.join(tmpdir, pat)))
@@ -1012,7 +999,12 @@ class MainWindow(QMainWindow):
     def _run_regen_for_file(self, *, run_id: int, file_id: int, run_out_dir: str, file_out_dir: str, source_xel: str):
         if not self.ws:
             return
-        prefix = self._latest_prefix_from_tmp(run_out_dir)
+        # file_hash is embedded in per-file output folder name: <safe>_<hash8>
+        bn = os.path.basename(file_out_dir.rstrip(os.sep))
+        m = re.search(r"_([0-9a-f]{8})$", bn)
+        file_hash = m.group(1) if m else ""
+
+        prefix = self._latest_prefix_from_tmp(run_out_dir, file_hash=file_hash) if file_hash else None
         if not prefix:
             QMessageBox.warning(self, "再生成", f"tmp/jsonl が見つからないためスキップしました。\n{run_out_dir}")
             return

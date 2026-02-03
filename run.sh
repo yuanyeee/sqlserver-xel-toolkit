@@ -84,13 +84,17 @@ run_one() {
   safe_base="$(echo "$base" | sed -E 's/[^A-Za-z0-9._-]+/_/g; s/^_+//; s/_+$//')"
   if [[ -z "$safe_base" ]]; then safe_base="input"; fi
 
+  # Use path-hash in output folder to avoid collisions when multiple files share the same name
+  local file_hash
+  file_hash="$(echo -n "$xel" | shasum -a 256 | awk '{print substr($1,1,8)}')"
+
   local FILE_OUT
-  FILE_OUT="$OUT_DIR/$safe_base"
+  FILE_OUT="$OUT_DIR/${safe_base}_${file_hash}"
   mkdir -p "$FILE_OUT"
 
   local ts
   ts="$(date +%Y%m%d_%H%M%S)"
-  local prefix="${base}_${ts}"
+  local prefix="${base}_${file_hash}_${ts}"
 
   echo "==> Processing: $xel"
 

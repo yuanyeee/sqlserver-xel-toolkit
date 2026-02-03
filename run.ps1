@@ -119,11 +119,12 @@ function RunOne([string]$path) {
   $base = [IO.Path]::GetFileNameWithoutExtension($path)
 
   $safeBase = SafeBase $base
-  $fileOut = Join-Path $OutDir $safeBase
+  $fileHash = Hash8 (Resolve-Path -LiteralPath $path | Select-Object -ExpandProperty Path)
+  $fileOut = Join-Path $OutDir ("${safeBase}_${fileHash}")
   New-Item -ItemType Directory -Force -Path $fileOut | Out-Null
 
   $ts = (Get-Date).ToString('yyyyMMdd_HHmmss')
-  $prefix = "${base}_${ts}"
+  $prefix = "${base}_${fileHash}_${ts}"
 
   Write-Host "==> Processing: $path"
 
