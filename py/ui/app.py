@@ -57,6 +57,7 @@ from .delete_file_dialog import DeleteFileDialog
 from .delete_report_dialog import DeleteReportDialog
 from .workspace import delete_run_db, delete_file_db, delete_report_db
 from .delete_utils import trash_paths
+from .workspace_select_dialog import WorkspaceSelectDialog
 
 
 @dataclass
@@ -216,6 +217,10 @@ class MainWindow(QMainWindow):
         btn_open_ws.clicked.connect(self.open_workspace)
         tb.addWidget(btn_open_ws)
 
+        btn_change_ws = QPushButton("Workspace変更…")
+        btn_change_ws.clicked.connect(self.change_workspace)
+        tb.addWidget(btn_change_ws)
+
         btn_new_run = QPushButton("New Run")
         btn_new_run.clicked.connect(self.new_run)
         tb.addWidget(btn_new_run)
@@ -251,15 +256,33 @@ class MainWindow(QMainWindow):
         self.status = QLabel("")
         tb.addWidget(self.status)
 
-    def open_workspace(self):
-        d = QFileDialog.getExistingDirectory(self, "Choose workspace directory")
+    def _set_workspace(self, d: str):
         if not d:
             return
         db_path = os.path.join(d, "workspace.db")
         init_db(db_path)
         self.ws = WorkspaceState(root=d, db_path=db_path)
         self.status.setText(os.path.basename(d))
+        # keep env consistent for integrated tools
+        os.environ["XEL_TOOLKIT_WORKSPACE"] = d
         self.reload_lists()
+
+    def open_workspace(self):
+        d = QFileDialog.getExistingDirectory(self, "Choose workspace directory")
+        if not d:
+            return
+        # Save to shared recent list
+        from .settings import load_config, save_config, push_recent
+        cfg = load_config()
+        cfg.recent_workspaces = push_recent(cfg.recent_workspaces, d)
+        save_config(cfg)
+        self._set_workspace(d)
+
+    def change_workspace(self):
+        d = WorkspaceSelectDialog.select_workspace(self)
+        if not d:
+            return
+        self._set_workspace(d)
 
     def reload_lists(self):
         if not self.ws:
@@ -688,6 +711,12 @@ class MainWindow(QMainWindow):
 def main():
     app = QApplication([])
     w = MainWindow()
+
+    # Auto-open last workspace if available
+    last = WorkspaceSelectDialog.last_workspace()
+    if last:
+        w._set_workspace(last)
+
     w.show()
     app.exec()
 
