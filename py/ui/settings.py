@@ -36,17 +36,18 @@ def load_config() -> AppConfig:
 
 
 def save_config(cfg: AppConfig) -> None:
+    """Merge-write config to avoid clobbering keys written by IntegratedTool."""
     APP_DIR.mkdir(parents=True, exist_ok=True)
+    raw = _load_raw()
+    raw.update(
+        {
+            "recent_workspaces": cfg.recent_workspaces,
+            "inputmd_mode": cfg.inputmd_mode,
+            "confirm_inputmd_overwrite": cfg.confirm_inputmd_overwrite,
+        }
+    )
     CONFIG_PATH.write_text(
-        json.dumps(
-            {
-                "recent_workspaces": cfg.recent_workspaces,
-                "inputmd_mode": cfg.inputmd_mode,
-                "confirm_inputmd_overwrite": cfg.confirm_inputmd_overwrite,
-            },
-            ensure_ascii=False,
-            indent=2,
-        ),
+        json.dumps(raw, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
 
