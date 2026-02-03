@@ -40,6 +40,7 @@ from .workspace import (
     add_input,
     add_report,
     add_run,
+    replace_run_by_out_dir,
     connect_db,
     get_report,
     init_db,
@@ -630,7 +631,13 @@ class MainWindow(QMainWindow):
         # Scan outputs and insert into DB
         conn = connect_db(self.ws.db_path)
         try:
-            run_id = add_run(conn, started_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"), out_dir=out_dir, slow_threshold_sec=slow)
+            # Keep only one DB row per stable out_dir
+            run_id = replace_run_by_out_dir(
+                conn,
+                started_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                out_dir=out_dir,
+                slow_threshold_sec=slow,
+            )
             for x in xel_files:
                 add_input(conn, run_id=run_id, path=x)
 

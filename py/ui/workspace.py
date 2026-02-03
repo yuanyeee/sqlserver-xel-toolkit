@@ -136,6 +136,27 @@ def add_run(conn: sqlite3.Connection, *, started_at: str, out_dir: str, slow_thr
     return int(cur.lastrowid)
 
 
+def replace_run_by_out_dir(conn: sqlite3.Connection, *, started_at: str, out_dir: str, slow_threshold_sec: float, note: str = "") -> int:
+    """Ensure only one run row exists per out_dir.
+
+    If an existing run uses the same out_dir, delete it (including FTS rows),
+    then insert a new run.
+    """
+    row = conn.execute("SELECT id FROM runs WHERE out_dir=? ORDER BY id DESC LIMIT 1", (out_dir,)).fetchone()
+    if row:
+        run_id = int(row["id"]) if isinstance(row, sqlite3.Row) else int(row[0])
+        # Clean FTS rows explicitly (no FK)
+        rep_ids = conn.execute("SELECT id FROM reports WHERE run_id=?", (run_id,)).fetchall()
+        for r in rep_ids:
+            rid = int(r["id"]) if isinstance(r, sqlite3.Row) else int(r[0])
+            conn.execute("DELETE FROM reports_fts WHERE report_id=?", (rid,))
+        # Delete run (cascades to inputs/files/reports)
+        conn.execute("DELETE FROM runs WHERE id=?", (run_id,))
+        conn.commit()
+
+    return add_run(conn, started_at=started_at, out_dir=out_dir, slow_threshold_sec=slow_threshold_sec, note=note)
+
+
 def add_input(conn: sqlite3.Connection, *, run_id: int, path: str) -> None:
     try:
         st = os.stat(path)
