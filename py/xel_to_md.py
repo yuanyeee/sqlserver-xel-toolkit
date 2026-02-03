@@ -37,6 +37,130 @@ def _write_md(path: str, kv: List[tuple[str, Any]]) -> None:
             f.write("\n```\n\n")
 
 
+def _write_deadlock_md(path: str, *, source: str, timestamp: str, xml_report: str) -> None:
+    """Write IntegratedTool-compatible deadlock markdown from xml_report."""
+    import xml.etree.ElementTree as ET
+
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+
+    victim_pid = None
+    victim_spid = None
+    processes = []
+    resources = []
+
+    try:
+        root = ET.fromstring(xml_report)
+
+        vp = root.find("./victim-list/victimProcess")
+        if vp is not None:
+            victim_pid = vp.attrib.get("id")
+
+        pid_to_spid = {}
+        for p in root.findall("./process-list/process"):
+            attrib = dict(p.attrib)
+            pid = attrib.get("id")
+            spid = attrib.get("spid")
+            if pid and spid:
+                pid_to_spid[pid] = spid
+
+            inputbuf_el = p.find("./inputbuf")
+            if inputbuf_el is not None and inputbuf_el.text:
+                attrib["inputbuf"] = inputbuf_el.text.strip()
+
+            processes.append(attrib)
+
+        if victim_pid:
+            victim_spid = pid_to_spid.get(victim_pid)
+
+        for res in root.findall("./resource-list/*"):
+            r = dict(res.attrib)
+            r["_type"] = res.tag
+            resources.append(r)
+    except Exception:
+        # fall back to minimal
+        pass
+
+    def w(line: str = ""):
+        out.append(line)
+
+    out: List[str] = []
+    w("# Deadlock (from XEL)")
+    w("")
+    w(f"**Timestamp:** {timestamp}")
+    w(f"**Source:** {source}")
+    if victim_pid or victim_spid:
+        w(f"**Victim process:** {victim_pid or victim_spid}")
+    w("")
+
+    # Processes section (IntegratedTool parser expects these headings)
+    if processes:
+        w("## Processes")
+        w("")
+        for i, p in enumerate(processes, 1):
+            w(f"### Process {i}")
+            w("")
+            if p.get("id"):
+                w(f"**Process ID:** {p.get('id')}")
+            if p.get("spid"):
+                w(f"**SPID:** {p.get('spid')}")
+            if p.get("status"):
+                w(f"**Status:** {p.get('status')}")
+            if p.get("isolationlevel"):
+                w(f"**Isolation Level:** {p.get('isolationlevel')}")
+            if p.get("waitresource"):
+                w(f"**Wait Resource:** {p.get('waitresource')}")
+            if p.get("logused"):
+                w(f"**Log Used:** {p.get('logused')}")
+            if p.get("clientapp"):
+                w(f"**Client Application:** {p.get('clientapp')}")
+            if p.get("loginname"):
+                w(f"**Login Name:** {p.get('loginname')}")
+            if p.get("hostname"):
+                w(f"**Hostname:** {p.get('hostname')}")
+            if p.get("transactionname"):
+                w(f"**Transaction Name:** {p.get('transactionname')}")
+            if p.get("ownerid"):
+                w(f"**Owner ID:** {p.get('ownerid')}")
+            w("")
+            if p.get("inputbuf"):
+                w("```sql")
+                w(str(p.get("inputbuf")).strip())
+                w("```")
+                w("")
+
+    # Resources section
+    if resources:
+        w("## Resources")
+        w("")
+        for i, r in enumerate(resources, 1):
+            w(f"### Resource {i}")
+            w("")
+            if r.get("objectname"):
+                w(f"**Object Name:** {r.get('objectname')}")
+            if r.get("indexname"):
+                w(f"**Index Name:** {r.get('indexname')}")
+            if r.get("dbname"):
+                w(f"**Database Name:** {r.get('dbname')}")
+            if r.get("dbid"):
+                w(f"**Database Name:** dbid={r.get('dbid')}")
+            if r.get("_type"):
+                w(f"**Type:** {r.get('_type')}")
+            if r.get("mode"):
+                w(f"**Mode:** {r.get('mode')}")
+            w("")
+
+    # Raw XML
+    w("## XML")
+    w("")
+    w("```xml")
+    w(xml_report.strip())
+    w("```")
+    w("")
+
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("\n".join(out))
+
+
 def main():
     ap = argparse.ArgumentParser(description="Convert XEL JSONL exports to per-event Markdown files")
     ap.add_argument("--jsonl", required=True, help="Input JSONL (from XelDump --export-jsonl)")
@@ -92,6 +216,14 @@ def main():
         folder = os.path.join(out_root, date_part)
         filename = f"{date_part}_{key}_{event}_{i}.md"
         path = os.path.join(folder, filename)
+
+        # Special case: deadlock report -> emit IntegratedTool-compatible markdown
+        if event == "xml_deadlock_report" and "xml_report" in ev.fields and ev.fields.get("xml_report"):
+            _write_deadlock_md(path, source=args.source, timestamp=dt_display, xml_report=str(ev.fields.get("xml_report")))
+            count += 1
+            if args.limit and count >= args.limit:
+                break
+            continue
 
         # Flatten fields/actions
         kv: List[tuple[str, Any]] = []
