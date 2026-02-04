@@ -150,39 +150,13 @@ def generate_slowquery_reports_from_jsonl(
         .sort_values("count", ascending=False)
     )
 
-    # Prefer IntegratedTool-style aggregated XLSX (same content as the integrated viewer export).
-    # Fallback to the legacy per-event workbook if IntegratedTool is not available.
-    try:
-        import sys
-
-        repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-        it_dir = os.path.join(repo_root, "integratedtool")
-        if os.path.isdir(it_dir) and it_dir not in sys.path:
-            sys.path.insert(0, it_dir)
-
-        from aggregation_processor import AggregationProcessor  # type: ignore
-
-        ap = AggregationProcessor()
-
-        df_it = df.copy()
-        df_it["StartTime"] = pd.to_datetime(df_it.get("timestamp"), errors="coerce")
-        # IntegratedTool expects microseconds in Duration
-        df_it["Duration"] = pd.to_numeric(df_it.get("duration_us"), errors="coerce")
-        # Provide expected SQL text column
-        if "sql_text" in df_it.columns:
-            pass
-        elif "TextData" in df_it.columns:
-            df_it["sql_text"] = df_it["TextData"]
-
-        ap._process_slowquery_df(df_it, out_dir, source_files=None, forced_prefix=prefix)
-    except Exception:
-        with pd.ExcelWriter(xlsx_path, engine="openpyxl") as w:
-            df_sorted.to_excel(w, sheet_name="Events", index=False)
-            df_sorted.head(50).to_excel(w, sheet_name="Top50_Duration", index=False)
-            by_db.reset_index().to_excel(w, sheet_name="ByDatabase", index=False)
-            by_app.reset_index().to_excel(w, sheet_name="ByApp", index=False)
-            if not by_ctx.empty:
-                by_ctx.reset_index().to_excel(w, sheet_name="ByContext", index=False)
+    with pd.ExcelWriter(xlsx_path, engine="openpyxl") as w:
+        df_sorted.to_excel(w, sheet_name="Events", index=False)
+        df_sorted.head(50).to_excel(w, sheet_name="Top50_Duration", index=False)
+        by_db.reset_index().to_excel(w, sheet_name="ByDatabase", index=False)
+        by_app.reset_index().to_excel(w, sheet_name="ByApp", index=False)
+        if not by_ctx.empty:
+            by_ctx.reset_index().to_excel(w, sheet_name="ByContext", index=False)
 
     # Markdown summary
     md: List[str] = []

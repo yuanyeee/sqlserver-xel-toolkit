@@ -262,58 +262,15 @@ def generate_deadlock_report_from_jsonl(
     df = pd.DataFrame(rows)
 
     xlsx_path = os.path.join(out_dir, f"{prefix}_deadlock.xlsx")
-
-    # Prefer IntegratedTool-style aggregated XLSX (same content as the integrated viewer export).
-    # Fallback to the legacy minimal workbook if IntegratedTool is not available.
     try:
-        import sys
-
-        repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-        it_dir = os.path.join(repo_root, "integratedtool")
-        if os.path.isdir(it_dir) and it_dir not in sys.path:
-            sys.path.insert(0, it_dir)
-
-        from aggregation_processor import AggregationProcessor  # type: ignore
-
-        # Build a parsed_data list compatible with IntegratedTool deadlock exporter
-        parsed_list: List[Dict[str, Any]] = []
-        for it in items:
-            # Use the already-parsed process list (attributes + inputbuf)
-            # Resources: best-effort extract from the original XML again for richer output
-            resources: List[Dict[str, Any]] = []
-            try:
-                # Find the corresponding xml text by re-parsing from source is too costly; rely on objects only.
-                pass
-            except Exception:
-                resources = []
-
-            victim_proc = None
-            if it.victim_spid:
-                for p in it.processes:
-                    if str(p.get('spid') or '') == str(it.victim_spid):
-                        victim_proc = p
-                        break
-
-            parsed_list.append({
-                'timestamp': it.timestamp or None,
-                'processes': it.processes,
-                'resources': resources,
-                'victim_process': victim_proc or {},
-            })
-
-        df_it = pd.DataFrame({'parsed_data': parsed_list})
-        ap = AggregationProcessor()
-        ap._process_deadlock_df(df_it, out_dir, source_files=None, forced_prefix=prefix)
+        with pd.ExcelWriter(xlsx_path, engine="openpyxl") as w:
+            df.to_excel(w, index=False, sheet_name="deadlocks")
+            if by_object:
+                obj_df = pd.DataFrame([{ "object": k, "count": v } for k, v in by_object.most_common()])
+                obj_df.to_excel(w, index=False, sheet_name="objects")
     except Exception:
-        try:
-            with pd.ExcelWriter(xlsx_path, engine="openpyxl") as w:
-                df.to_excel(w, index=False, sheet_name="deadlocks")
-                if by_object:
-                    obj_df = pd.DataFrame([{ "object": k, "count": v } for k, v in by_object.most_common()])
-                    obj_df.to_excel(w, index=False, sheet_name="objects")
-        except Exception:
-            # If Excel generation fails for some reason, still return markdown.
-            xlsx_path = ""
+        # If Excel generation fails for some reason, still return markdown.
+        xlsx_path = ""
 
     out: Dict[str, str] = {"md": md_path}
     if xlsx_path and os.path.exists(xlsx_path):

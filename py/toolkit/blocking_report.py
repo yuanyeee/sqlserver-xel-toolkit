@@ -294,44 +294,17 @@ def generate_blocking_reports_from_jsonl(
     by_db = df["database_name"].value_counts().head(50)
     by_lock = df["lock_mode"].value_counts().head(50)
 
-    # Prefer IntegratedTool-style aggregated XLSX (same content as the integrated viewer export).
-    # Fallback to the legacy per-event workbook if IntegratedTool is not available.
-    try:
-        import sys
-
-        repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-        it_dir = os.path.join(repo_root, "integratedtool")
-        if os.path.isdir(it_dir) and it_dir not in sys.path:
-            sys.path.insert(0, it_dir)
-
-        from aggregation_processor import AggregationProcessor  # type: ignore
-
-        ap = AggregationProcessor()
-
-        df_it = df.copy()
-        df_it["event_time"] = pd.to_datetime(df_it.get("timestamp"), errors="coerce")
-        df_it["duration"] = pd.to_numeric(df_it.get("duration_us"), errors="coerce")
-        df_it["victim_sql"] = df_it.get("blocked_inputbuf")
-        df_it["blocking_sql"] = df_it.get("blocking_inputbuf")
-        df_it["victim_spid"] = df_it.get("blocked_spid")
-        df_it["blocking_spid"] = df_it.get("blocking_spid")
-        # Best-effort: only one app is known from XEL actions
-        df_it["victim_clientapp"] = df_it.get("client_app_name")
-
-        # Run IntegratedTool exporter (creates {prefix}_blocking.xlsx / _report.md)
-        ap._process_blocking_df(df_it, out_dir, source_files=None, forced_prefix=prefix)
-    except Exception:
-        with pd.ExcelWriter(xlsx_path, engine="openpyxl") as w:
-            df_sorted.to_excel(w, sheet_name="Events", index=False)
-            df_sorted.head(100).to_excel(w, sheet_name="Top100_Duration", index=False)
-            by_blocked.reset_index().to_excel(w, sheet_name="ByBlockedSpid", index=False)
-            by_blocking.reset_index().to_excel(w, sheet_name="ByBlockingSpid", index=False)
-            by_db.reset_index(name="count").to_excel(w, sheet_name="ByDatabase", index=False)
-            by_lock.reset_index(name="count").to_excel(w, sheet_name="ByLockMode", index=False)
-            by_blocked_table.reset_index(name="count").to_excel(w, sheet_name="Blocked_Table_Guess", index=False)
-            by_blocking_table.reset_index(name="count").to_excel(w, sheet_name="Blocking_Table_Guess", index=False)
-            by_blocked_ctx.reset_index(name="count").to_excel(w, sheet_name="Blocked_Context", index=False)
-            by_blocking_ctx.reset_index(name="count").to_excel(w, sheet_name="Blocking_Context", index=False)
+    with pd.ExcelWriter(xlsx_path, engine="openpyxl") as w:
+        df_sorted.to_excel(w, sheet_name="Events", index=False)
+        df_sorted.head(100).to_excel(w, sheet_name="Top100_Duration", index=False)
+        by_blocked.reset_index().to_excel(w, sheet_name="ByBlockedSpid", index=False)
+        by_blocking.reset_index().to_excel(w, sheet_name="ByBlockingSpid", index=False)
+        by_db.reset_index(name="count").to_excel(w, sheet_name="ByDatabase", index=False)
+        by_lock.reset_index(name="count").to_excel(w, sheet_name="ByLockMode", index=False)
+        by_blocked_table.reset_index(name="count").to_excel(w, sheet_name="Blocked_Table_Guess", index=False)
+        by_blocking_table.reset_index(name="count").to_excel(w, sheet_name="Blocking_Table_Guess", index=False)
+        by_blocked_ctx.reset_index(name="count").to_excel(w, sheet_name="Blocked_Context", index=False)
+        by_blocking_ctx.reset_index(name="count").to_excel(w, sheet_name="Blocking_Context", index=False)
 
     md: List[str] = []
     md.append("# Blocking Report (from XEL)")
