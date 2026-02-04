@@ -5,17 +5,14 @@ from __future__ import annotations
 import argparse
 import os
 import re
+import xml.etree.ElementTree as ET
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from toolkit.xel_jsonl import iter_events
-from toolkit.timeutil import in_range, parse_iso, to_jst
-
-
-def _safe_name(name: str) -> str:
-    s = os.path.basename(str(name))
-    s = re.sub(r"[^A-Za-z0-9._-]+", "_", s).strip("._-")
-    return s or "input"
+from toolkit.timeutil import in_range, parse_iso, parse_jst_minute, to_jst
+from toolkit.ranges import in_any_range, load_ranges_json
+from toolkit.utils import safe_stem
 
 
 def _fmt_value(v: Any) -> str:
@@ -266,8 +263,6 @@ def _write_slowquery_md(path: str, *, source: str, timestamp: str, event_name: s
 
 def _write_deadlock_md(path: str, *, source: str, timestamp: str, xml_report: str) -> None:
     """Write IntegratedTool-compatible deadlock markdown from xml_report."""
-    import xml.etree.ElementTree as ET
-
     os.makedirs(os.path.dirname(path), exist_ok=True)
 
     victim_pid = None
@@ -303,8 +298,8 @@ def _write_deadlock_md(path: str, *, source: str, timestamp: str, xml_report: st
             r = dict(res.attrib)
             r["_type"] = res.tag
             resources.append(r)
-    except Exception:
-        # fall back to minimal
+    except ET.ParseError:
+        # Malformed XML, fall back to minimal output
         pass
 
     def w(line: str = ""):
@@ -406,9 +401,7 @@ def main():
     key = args.key
     event = args.event
 
-    # Parse optional JST range (reuse toolkit.timeutil parser)
-    from toolkit.timeutil import parse_jst_minute
-
+    # Parse optional JST range
     start_jst = parse_jst_minute(args.start) if args.start else None
     end_jst = parse_jst_minute(args.end) if args.end else None
 
@@ -416,10 +409,9 @@ def main():
     ranges_path = args.ranges_json or os.environ.get("XEL_TOOLKIT_RANGES_JSON")
     if ranges_path:
         try:
-            from toolkit.ranges import load_ranges_json
-
             ranges = load_ranges_json(ranges_path)
-        except Exception:
+        except (FileNotFoundError, ValueError):
+            # Missing or invalid ranges file
             ranges = []
 
     count = 0
@@ -428,11 +420,8 @@ def main():
         if dt is not None:
             if not in_range(dt, start_jst, end_jst):
                 continue
-            if ranges:
-                from toolkit.ranges import in_any_range
-
-                if not in_any_range(dt, ranges):
-                    continue
+            if ranges and not in_any_range(dt, ranges):
+                continue
             jst = to_jst(dt)
             date_part = jst.strftime("%Y%m%d")
             dt_display = jst.strftime("%Y-%m-%d %H:%M:%S%z")
