@@ -121,6 +121,7 @@ def generate_slowquery_reports_from_jsonl(
     tag = range_tag(lo, hi)
     prefix = f"{prefix_base}_{tag}"
     xlsx_path = os.path.join(out_dir, f"{prefix}_slowquery.xlsx")
+    legacy_xlsx_path = os.path.join(out_dir, f"{prefix}_slowquery_legacy.xlsx")
     md_path = os.path.join(out_dir, f"{prefix}_slowquery_report.md")
 
     if df.empty:
@@ -150,13 +151,33 @@ def generate_slowquery_reports_from_jsonl(
         .sort_values("count", ascending=False)
     )
 
-    with pd.ExcelWriter(xlsx_path, engine="openpyxl") as w:
+    # 1) Legacy workbook (keep previous Toolkit format)
+    with pd.ExcelWriter(legacy_xlsx_path, engine="openpyxl") as w:
         df_sorted.to_excel(w, sheet_name="Events", index=False)
         df_sorted.head(50).to_excel(w, sheet_name="Top50_Duration", index=False)
         by_db.reset_index().to_excel(w, sheet_name="ByDatabase", index=False)
         by_app.reset_index().to_excel(w, sheet_name="ByApp", index=False)
         if not by_ctx.empty:
             by_ctx.reset_index().to_excel(w, sheet_name="ByContext", index=False)
+
+    # 2) IntegratedTool-style aggregated workbook (primary)
+    try:
+        import sys
+
+        repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+        it_dir = os.path.join(repo_root, "integratedtool")
+        if os.path.isdir(it_dir) and it_dir not in sys.path:
+            sys.path.insert(0, it_dir)
+
+        from aggregation_processor import AggregationProcessor  # type: ignore
+
+        ap = AggregationProcessor()
+        df_it = df.copy()
+        df_it["StartTime"] = pd.to_datetime(df_it.get("timestamp"), errors="coerce")
+        df_it["Duration"] = pd.to_numeric(df_it.get("duration_us"), errors="coerce")
+        ap._process_slowquery_df(df_it, out_dir, source_files=None, forced_prefix=prefix)
+    except Exception:
+        xlsx_path = legacy_xlsx_path
 
     # Markdown summary
     md: List[str] = []
@@ -166,7 +187,8 @@ def generate_slowquery_reports_from_jsonl(
     md.append(f"- Source XEL: `{source_xel}`")
     md.append(f"- Threshold: >= {threshold_sec:.1f}s")
     md.append(f"- Matched events: {len(df)}")
-    md.append(f"- Output: `{os.path.basename(xlsx_path)}`")
+    md.append(f"- Output (aggregated): `{os.path.basename(xlsx_path)}`")
+    md.append(f"- Output (legacy): `{os.path.basename(legacy_xlsx_path)}`")
     md.append("")
 
     top = df_sorted.head(10)

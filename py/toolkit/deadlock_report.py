@@ -262,17 +262,57 @@ def generate_deadlock_report_from_jsonl(
     df = pd.DataFrame(rows)
 
     xlsx_path = os.path.join(out_dir, f"{prefix}_deadlock.xlsx")
+    legacy_xlsx_path = os.path.join(out_dir, f"{prefix}_deadlock_legacy.xlsx")
+
+    # 1) Legacy workbook (keep previous Toolkit format)
     try:
-        with pd.ExcelWriter(xlsx_path, engine="openpyxl") as w:
+        with pd.ExcelWriter(legacy_xlsx_path, engine="openpyxl") as w:
             df.to_excel(w, index=False, sheet_name="deadlocks")
             if by_object:
                 obj_df = pd.DataFrame([{ "object": k, "count": v } for k, v in by_object.most_common()])
                 obj_df.to_excel(w, index=False, sheet_name="objects")
     except Exception:
-        # If Excel generation fails for some reason, still return markdown.
-        xlsx_path = ""
+        legacy_xlsx_path = ""
+
+    # 2) IntegratedTool-style aggregated workbook (primary)
+    try:
+        import sys
+
+        repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+        it_dir = os.path.join(repo_root, "integratedtool")
+        if os.path.isdir(it_dir) and it_dir not in sys.path:
+            sys.path.insert(0, it_dir)
+
+        from aggregation_processor import AggregationProcessor  # type: ignore
+
+        parsed_list: List[Dict[str, Any]] = []
+        for it in items:
+            victim_proc = None
+            if it.victim_spid:
+                for p in it.processes:
+                    if str(p.get('spid') or '') == str(it.victim_spid):
+                        victim_proc = p
+                        break
+            parsed_list.append({
+                'timestamp': it.timestamp or None,
+                'processes': it.processes,
+                'resources': [],
+                'victim_process': victim_proc or {},
+            })
+
+        df_it = pd.DataFrame({'parsed_data': parsed_list})
+        ap = AggregationProcessor()
+        ap._process_deadlock_df(df_it, out_dir, source_files=None, forced_prefix=prefix)
+    except Exception:
+        # If IntegratedTool export fails, keep legacy only.
+        if legacy_xlsx_path:
+            xlsx_path = legacy_xlsx_path
+        else:
+            xlsx_path = ""
 
     out: Dict[str, str] = {"md": md_path}
     if xlsx_path and os.path.exists(xlsx_path):
         out["xlsx"] = xlsx_path
+    if legacy_xlsx_path and os.path.exists(legacy_xlsx_path):
+        out["xlsx_legacy"] = legacy_xlsx_path
     return out
