@@ -26,7 +26,7 @@ class DeleteReportChoice:
 class DeleteReportDialog(QDialog):
     def __init__(self, workspace_root: str, title: str, paths: List[str], parent=None):
         super().__init__(parent)
-        self.setWindowTitle("删除 Report")
+        self.setWindowTitle("Report を削除")
         self.resize(560, 260)
 
         self.workspace_root = workspace_root
@@ -35,29 +35,29 @@ class DeleteReportDialog(QDialog):
         self.choice: Optional[DeleteReportChoice] = None
 
         layout = QVBoxLayout(self)
-        layout.addWidget(QLabel("删除当前选中的 Report（单条）。"))
+        layout.addWidget(QLabel("選択した Report を削除します。"))
         layout.addWidget(QLabel(f"Report: {title}"))
 
         if self.paths:
-            layout.addWidget(QLabel("相关文件:"))
+            layout.addWidget(QLabel("関連ファイル:"))
             for p in self.paths[:4]:
                 layout.addWidget(QLabel(p))
             if len(self.paths) > 4:
                 layout.addWidget(QLabel(f"... ({len(self.paths) - 4} more)"))
 
-        self.rb_trash = QRadioButton("从 DB 移除，并将相关文件移动到回收站（推荐）")
+        self.rb_trash = QRadioButton("DB から削除し、関連ファイルをゴミ箱へ移動（推奨）")
         self.rb_trash.setChecked(True)
-        self.rb_db_only = QRadioButton("仅从 DB 移除（不动文件）")
+        self.rb_db_only = QRadioButton("DB からのみ削除（ファイルはそのまま）")
 
         layout.addWidget(self.rb_trash)
         layout.addWidget(self.rb_db_only)
 
         btns = QHBoxLayout()
-        ok = QPushButton("执行")
+        ok = QPushButton("実行")
         ok.clicked.connect(self.on_ok)
         btns.addWidget(ok)
 
-        cancel = QPushButton("取消")
+        cancel = QPushButton("キャンセル")
         cancel.clicked.connect(self.reject)
         btns.addWidget(cancel)
         btns.addStretch(1)
@@ -66,7 +66,7 @@ class DeleteReportDialog(QDialog):
     def on_ok(self):
         for p in self.paths:
             if p and os.path.exists(p) and not is_within(self.workspace_root, p):
-                QMessageBox.critical(self, "安全检查", f"拒绝删除 workspace 外路径: {p}")
+                QMessageBox.critical(self, "安全チェック", f"workspace 外のパスは削除できません: {p}")
                 return
 
         if self.rb_trash.isChecked():

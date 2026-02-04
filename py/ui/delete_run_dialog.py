@@ -27,7 +27,7 @@ class DeleteRunChoice:
 class DeleteRunDialog(QDialog):
     def __init__(self, workspace_root: str, run_out_dirs: list[str], parent=None):
         super().__init__(parent)
-        self.setWindowTitle("删除 Run")
+        self.setWindowTitle("Run を削除")
         self.resize(560, 280)
 
         self.workspace_root = workspace_root
@@ -35,28 +35,28 @@ class DeleteRunDialog(QDialog):
         self.choice: Optional[DeleteRunChoice] = None
 
         layout = QVBoxLayout(self)
-        layout.addWidget(QLabel("删除 Run（runs 目录）与/或从数据库移除。inputMD 不会被影响。"))
-        layout.addWidget(QLabel(f"选中数量: {len(self.run_out_dirs)}"))
+        layout.addWidget(QLabel("Run（runs ディレクトリ）を削除、および/またはデータベースから削除します。\ninputMD は影響を受けません。"))
+        layout.addWidget(QLabel(f"選択数: {len(self.run_out_dirs)}"))
         if self.run_out_dirs:
-            layout.addWidget(QLabel("输出目录(部分):"))
+            layout.addWidget(QLabel("出力ディレクトリ（一部）:"))
             for d in self.run_out_dirs[:4]:
                 layout.addWidget(QLabel(d))
             if len(self.run_out_dirs) > 4:
                 layout.addWidget(QLabel(f"... ({len(self.run_out_dirs) - 4} more)"))
 
-        self.rb_trash = QRadioButton("从 DB 移除，并将 runs 目录移动到回收站（推荐）")
+        self.rb_trash = QRadioButton("DB から削除し、runs ディレクトリをゴミ箱へ移動（推奨）")
         self.rb_trash.setChecked(True)
-        self.rb_db_only = QRadioButton("仅从 DB 移除（不动文件）")
+        self.rb_db_only = QRadioButton("DB からのみ削除（ファイルはそのまま）")
 
         layout.addWidget(self.rb_trash)
         layout.addWidget(self.rb_db_only)
 
         btns = QHBoxLayout()
-        ok = QPushButton("执行")
+        ok = QPushButton("実行")
         ok.clicked.connect(self.on_ok)
         btns.addWidget(ok)
 
-        cancel = QPushButton("取消")
+        cancel = QPushButton("キャンセル")
         cancel.clicked.connect(self.reject)
         btns.addWidget(cancel)
         btns.addStretch(1)
@@ -66,7 +66,7 @@ class DeleteRunDialog(QDialog):
         # safety
         for d in self.run_out_dirs:
             if d and os.path.exists(d) and not is_within(self.workspace_root, d):
-                QMessageBox.critical(self, "安全检查", f"拒绝删除 workspace 外路径: {d}")
+                QMessageBox.critical(self, "安全チェック", f"workspace 外のパスは削除できません: {d}")
                 return
 
         if self.rb_trash.isChecked():

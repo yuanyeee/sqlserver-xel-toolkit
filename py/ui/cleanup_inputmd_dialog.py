@@ -31,7 +31,7 @@ class CleanupInputMdDialog(QDialog):
 
     def __init__(self, workspace_root: str, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("清理 inputMD")
+        self.setWindowTitle("inputMD クリーンアップ")
         self.resize(720, 420)
 
         self.workspace_root = workspace_root
@@ -132,7 +132,7 @@ class CleanupInputMdDialog(QDialog):
         # safety
         for p in paths:
             if not is_within(self.workspace_root, p):
-                QMessageBox.critical(self, "安全检查", f"拒绝删除 workspace 外路径: {p}")
+                QMessageBox.critical(self, "安全チェック", f"workspace 外のパスは削除できません: {p}")
                 return None
 
         return CleanupPlan(paths=paths)
@@ -140,13 +140,13 @@ class CleanupInputMdDialog(QDialog):
     def do_delete(self):
         plan = self.build_plan()
         if not plan or not plan.paths:
-            QMessageBox.information(self, "提示", "请选择要删除的对象")
+            QMessageBox.information(self, "確認", "削除するオブジェクトを選択してください")
             return
 
-        msg = "以下路径将移动到回收站:\n\n" + "\n".join(plan.paths)
-        if QMessageBox.question(self, "确认", msg) != QMessageBox.StandardButton.Yes:
+        msg = "以下のパスをゴミ箱へ移動します:\n\n" + "\n".join(plan.paths)
+        if QMessageBox.question(self, "確認", msg) != QMessageBox.StandardButton.Yes:
             return
 
         trashed = trash_paths(plan.paths)
-        QMessageBox.information(self, "完成", f"已移动到回收站: {len(trashed)} 项")
+        QMessageBox.information(self, "完了", f"ゴミ箱へ移動しました: {len(trashed)} 件")
         self.load_sources()
