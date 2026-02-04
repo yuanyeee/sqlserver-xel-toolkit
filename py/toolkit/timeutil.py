@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional, Tuple
@@ -31,8 +32,6 @@ def parse_iso(ts: str) -> Optional[datetime]:
 
     # Truncate fractional seconds to 6 digits if needed.
     # 2026-01-05T05:22:22.7454758+00:00 -> 2026-01-05T05:22:22.745475+00:00
-    import re
-
     m = re.match(r"^(.*?)(\.\d+)([+-]\d\d:\d\d)$", s)
     if m:
         head, frac, tz = m.group(1), m.group(2), m.group(3)

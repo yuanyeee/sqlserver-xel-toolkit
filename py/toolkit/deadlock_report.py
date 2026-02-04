@@ -12,6 +12,7 @@ import pandas as pd
 
 from .xel_jsonl import iter_events
 from .timeutil import in_range, merge_range, parse_iso, range_tag, to_jst
+from .utils import clean_excel_text
 
 
 @dataclass
@@ -20,13 +21,6 @@ class DeadlockItem:
     victim_spid: Optional[str]
     processes: List[Dict[str, str]]
     objects: List[str]
-
-
-def _safe_stem(path: str) -> str:
-    base = os.path.basename(path)
-    stem, _ = os.path.splitext(base)
-    stem = re.sub(r"[^A-Za-z0-9._-]+", "_", stem).strip("._-")
-    return stem or "deadlock"
 
 
 def _parse_deadlock_xml(xml_text: str) -> DeadlockItem:
@@ -73,20 +67,6 @@ def _parse_deadlock_xml(xml_text: str) -> DeadlockItem:
     )
 
 
-_ILLEGAL_EXCEL_RE = re.compile(r"[\x00-\x08\x0B\x0C\x0E-\x1F]")
-
-
-def _clean_excel_text(s: Any) -> Any:
-    if s is None:
-        return None
-    try:
-        text = str(s)
-    except Exception:
-        return s
-    text = text.replace("\r\n", "\n").replace("\r", "\n")
-    return _ILLEGAL_EXCEL_RE.sub("", text)
-
-
 def generate_deadlock_report_from_jsonl(
     jsonl_path: str,
     *,
@@ -125,7 +105,8 @@ def generate_deadlock_report_from_jsonl(
             item = _parse_deadlock_xml(str(xml_report))
             item.timestamp = ev.timestamp
             items.append(item)
-        except Exception:
+        except ET.ParseError:
+            # Skip malformed XML
             continue
 
     created = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -254,7 +235,7 @@ def generate_deadlock_report_from_jsonl(
                 "isolationlevel": (victim or {}).get("isolationlevel", ""),
                 "transactionname": (victim or {}).get("transactionname", ""),
                 "objects": ";".join(sorted(set(it.objects))),
-                "victim_sql": _clean_excel_text(victim_sql or ""),
+                "victim_sql": clean_excel_text(victim_sql or ""),
                 "source_xel": source_xel,
             }
         )

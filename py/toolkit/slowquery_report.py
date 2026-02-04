@@ -11,28 +11,7 @@ import pandas as pd
 from .xel_jsonl import iter_events
 from .context import pick_context
 from .timeutil import in_range, merge_range, parse_iso, range_tag
-
-
-_ILLEGAL_EXCEL_RE = re.compile(r"[\x00-\x08\x0B\x0C\x0E-\x1F]")
-
-
-def _clean_excel_text(s: Any) -> Any:
-    if s is None:
-        return None
-    try:
-        text = str(s)
-    except Exception:
-        return s
-    # Normalize CRLF, and remove characters openpyxl rejects
-    text = text.replace("\r\n", "\n").replace("\r", "\n")
-    return _ILLEGAL_EXCEL_RE.sub("", text)
-
-
-def _safe_stem(path: str) -> str:
-    base = os.path.basename(path)
-    stem, _ = os.path.splitext(base)
-    stem = re.sub(r"[^A-Za-z0-9._-]+", "_", stem).strip("._-")
-    return stem or "slowquery"
+from .utils import clean_excel_text
 
 
 def _duration_us_to_s(us: Any) -> Optional[float]:
@@ -84,7 +63,7 @@ def generate_slowquery_reports_from_jsonl(
             r = merge_range(r, dt)
 
         sql_text = actions.get("sql_text") or fields.get("statement") or fields.get("batch_text")
-        sql_text = _clean_excel_text(sql_text)
+        sql_text = clean_excel_text(sql_text)
 
         ctx = pick_context(str(sql_text or ""))
 
@@ -99,17 +78,17 @@ def generate_slowquery_reports_from_jsonl(
                 "physical_reads": fields.get("physical_reads"),
                 "writes": fields.get("writes"),
                 "row_count": fields.get("row_count"),
-                "database_name": _clean_excel_text(actions.get("database_name")),
-                "username": _clean_excel_text(actions.get("username")),
-                "client_app_name": _clean_excel_text(actions.get("client_app_name")),
-                "client_hostname": _clean_excel_text(actions.get("client_hostname")),
+                "database_name": clean_excel_text(actions.get("database_name")),
+                "username": clean_excel_text(actions.get("username")),
+                "client_app_name": clean_excel_text(actions.get("client_app_name")),
+                "client_hostname": clean_excel_text(actions.get("client_hostname")),
                 "session_id": actions.get("session_id"),
-                "object_name": _clean_excel_text(fields.get("object_name")),
-                "context_raw": _clean_excel_text(ctx.raw) if ctx else None,
-                "context_key": _clean_excel_text(ctx.key) if ctx else None,
-                "context_module": _clean_excel_text(ctx.module) if ctx else None,
-                "context_function": _clean_excel_text(ctx.function) if ctx else None,
-                "context_process": _clean_excel_text(ctx.process) if ctx else None,
+                "object_name": clean_excel_text(fields.get("object_name")),
+                "context_raw": clean_excel_text(ctx.raw) if ctx else None,
+                "context_key": clean_excel_text(ctx.key) if ctx else None,
+                "context_module": clean_excel_text(ctx.module) if ctx else None,
+                "context_function": clean_excel_text(ctx.function) if ctx else None,
+                "context_process": clean_excel_text(ctx.process) if ctx else None,
                 "sql_text": sql_text,
             }
         )

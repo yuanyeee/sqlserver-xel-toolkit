@@ -40,7 +40,11 @@ public static class Program
                 }
                 else if (a == "--max")
                 {
-                    maxSampleEvents = int.Parse(args[++i]);
+                    if (!int.TryParse(args[++i], out maxSampleEvents))
+                    {
+                        Console.Error.WriteLine($"Invalid value for --max: {args[i]}");
+                        return 2;
+                    }
                 }
                 else if (a == "--export-jsonl")
                 {
@@ -48,7 +52,11 @@ public static class Program
                 }
                 else if (a == "--export-limit")
                 {
-                    exportLimit = int.Parse(args[++i]);
+                    if (!int.TryParse(args[++i], out exportLimit))
+                    {
+                        Console.Error.WriteLine($"Invalid value for --export-limit: {args[i]}");
+                        return 2;
+                    }
                 }
                 else if (a == "--filter")
                 {

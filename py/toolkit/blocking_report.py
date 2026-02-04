@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import subprocess
 import xml.etree.ElementTree as ET
 from collections import Counter
@@ -14,20 +15,7 @@ import pandas as pd
 from .xel_jsonl import iter_events
 from .context import pick_context
 from .timeutil import in_range, merge_range, parse_iso, range_tag
-
-
-_ILLEGAL_EXCEL_RE = re.compile(r"[\x00-\x08\x0B\x0C\x0E-\x1F]")
-
-
-def _clean_excel_text(s: Any) -> Any:
-    if s is None:
-        return None
-    try:
-        text = str(s)
-    except Exception:
-        return s
-    text = text.replace("\r\n", "\n").replace("\r", "\n")
-    return _ILLEGAL_EXCEL_RE.sub("", text)
+from .utils import clean_excel_text
 
 
 def _duration_us_to_s(us: Any) -> Optional[float]:
@@ -143,7 +131,7 @@ def _try_enrich_object_names(df: pd.DataFrame, out_dir: str, prefix: str) -> pd.
 
         # Run dotnet mapper (optional). It reads MSSQL_CONNSTR from env.
         repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-        dotnet = "/usr/local/share/dotnet/dotnet"
+        dotnet = shutil.which("dotnet") or "dotnet"
         cmd = [
             dotnet,
             "run",
@@ -233,7 +221,7 @@ def generate_blocking_reports_from_jsonl(
             {
                 "timestamp": ev.timestamp,
                 "database_id": fields.get("database_id") or actions.get("database_id"),
-                "database_name": _clean_excel_text(fields.get("database_name") or actions.get("database_name")),
+                "database_name": clean_excel_text(fields.get("database_name") or actions.get("database_name")),
                 "duration_us": fields.get("duration"),
                 "duration_sec": duration_sec,
                 "lock_mode": fields.get("lock_mode"),
@@ -243,15 +231,15 @@ def generate_blocking_reports_from_jsonl(
                 "blocked_spid": parsed.get("blocked_spid") or actions.get("session_id"),
                 "blocking_spid": parsed.get("blocking_spid"),
                 "waitresource": parsed.get("waitresource"),
-                "client_app_name": _clean_excel_text(actions.get("client_app_name")),
-                "client_hostname": _clean_excel_text(actions.get("client_hostname")),
-                "username": _clean_excel_text(actions.get("username") or actions.get("nt_username") or actions.get("session_nt_username")),
-                "blocked_inputbuf": _clean_excel_text(blocked_sql),
-                "blocking_inputbuf": _clean_excel_text(blocking_sql),
-                "blocked_context_key": _clean_excel_text(blocked_ctx.key) if blocked_ctx else None,
-                "blocking_context_key": _clean_excel_text(blocking_ctx.key) if blocking_ctx else None,
-                "blocked_table_guess": _clean_excel_text(_extract_table_from_sql(blocked_sql or "")),
-                "blocking_table_guess": _clean_excel_text(_extract_table_from_sql(blocking_sql or "")),
+                "client_app_name": clean_excel_text(actions.get("client_app_name")),
+                "client_hostname": clean_excel_text(actions.get("client_hostname")),
+                "username": clean_excel_text(actions.get("username") or actions.get("nt_username") or actions.get("session_nt_username")),
+                "blocked_inputbuf": clean_excel_text(blocked_sql),
+                "blocking_inputbuf": clean_excel_text(blocking_sql),
+                "blocked_context_key": clean_excel_text(blocked_ctx.key) if blocked_ctx else None,
+                "blocking_context_key": clean_excel_text(blocking_ctx.key) if blocking_ctx else None,
+                "blocked_table_guess": clean_excel_text(_extract_table_from_sql(blocked_sql or "")),
+                "blocking_table_guess": clean_excel_text(_extract_table_from_sql(blocking_sql or "")),
             }
         )
 
