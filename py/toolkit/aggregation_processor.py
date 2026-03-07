@@ -103,10 +103,10 @@ def _clean(s: Any) -> Any:
 
 
 def _to_naive(s: pd.Series) -> pd.Series:
-    """Convert tz-aware datetime series to tz-naive (UTC→strip tz)."""
+    """Convert tz-aware datetime series to tz-naive (strip tz info)."""
     try:
         if hasattr(s, "dt") and hasattr(s.dt, "tz") and s.dt.tz is not None:
-            return s.dt.tz_localize(None)
+            return s.dt.tz_convert(None)
     except Exception:
         pass
     return s
@@ -114,17 +114,22 @@ def _to_naive(s: pd.Series) -> pd.Series:
 
 def _write_xlsx(path: str, sheets: Dict[str, pd.DataFrame]) -> None:
     """Write a multi-sheet Excel workbook."""
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     with pd.ExcelWriter(path, engine="openpyxl") as w:
         for name, df in sheets.items():
             # Truncate sheet name to 31 chars (Excel limit)
             sname = name[:31]
-            # Strip tz-aware datetimes
+            # Strip tz-aware datetimes and clean object columns
             df2 = df.copy()
             for col in df2.columns:
-                if pd.api.types.is_datetime64_any_dtype(df2[col]):
-                    df2[col] = _to_naive(df2[col])
-                elif df2[col].dtype == object:
-                    df2[col] = df2[col].apply(_clean)
+                try:
+                    if pd.api.types.is_datetime64_any_dtype(df2[col]):
+                        df2[col] = _to_naive(df2[col])
+                    elif df2[col].dtype == object:
+                        df2[col] = df2[col].apply(_clean)
+                except Exception:
+                    # Fallback: convert column to string
+                    df2[col] = df2[col].astype(str).apply(_clean)
             df2.to_excel(w, sheet_name=sname, index=False)
 
 

@@ -638,7 +638,7 @@ class MainWindow(QMainWindow):
             return
         items = self.run_list.selectedItems()
         if not items:
-            QMessageBox.information(self, "Run", "请选择要删除的 Run")
+            QMessageBox.information(self, "Run", "削除する Run を選択してください")
             return
 
         run_ids = [int(it.data(Qt.UserRole)) for it in items]
@@ -654,7 +654,7 @@ class MainWindow(QMainWindow):
             conn.close()
 
         if not out_dirs:
-            QMessageBox.warning(self, "Run", "找不到选中 Run 的 out_dir")
+            QMessageBox.warning(self, "Run", "選択した Run の出力先が見つかりません")
             return
 
         dlg = DeleteRunDialog(self.ws.root, out_dirs, self)
@@ -679,7 +679,7 @@ class MainWindow(QMainWindow):
             return
         file_items = self.file_list.selectedItems()
         if not file_items:
-            QMessageBox.information(self, "File", "请选择要删除的 File")
+            QMessageBox.information(self, "File", "削除する File を選択してください")
             return
 
         file_ids = [int(it.data(Qt.UserRole)) for it in file_items]
@@ -696,7 +696,7 @@ class MainWindow(QMainWindow):
             conn.close()
 
         if not out_dirs:
-            QMessageBox.warning(self, "File", "找不到选中 File 的 out_dir")
+            QMessageBox.warning(self, "File", "選択した File の出力先が見つかりません")
             return
 
         dlg = DeleteFileDialog(self.ws.root, out_dirs, file_names, self)
@@ -721,7 +721,7 @@ class MainWindow(QMainWindow):
             return
         rep_items = self.report_list.selectedItems()
         if not rep_items:
-            QMessageBox.information(self, "Report", "请选择要删除的 Report")
+            QMessageBox.information(self, "Report", "削除する Report を選択してください")
             return
 
         report_ids = [int(it.data(Qt.UserRole)) for it in rep_items]
@@ -734,7 +734,7 @@ class MainWindow(QMainWindow):
 
         reps = [r for r in reps if r]
         if not reps:
-            QMessageBox.warning(self, "Report", "找不到选中 Report")
+            QMessageBox.warning(self, "Report", "選択した Report が見つかりません")
             return
 
         title = f"{len(reps)} Reports"
