@@ -1,3 +1,2 @@
-[submodule "integratedtool"]
-	path = integratedtool
-	url = https://github.com/yuanyeee/IntegratedTool.git
+# IntegratedTool はサブモジュールから内蔵に移行しました（2026-03）。
+# 機能は py/toolkit/aggregation_processor.py に統合されています。

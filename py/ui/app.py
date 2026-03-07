@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import sys
 import subprocess
 import hashlib
@@ -324,9 +325,9 @@ class MainWindow(QMainWindow):
         m_ranges.addAction(self.act_apply_ranges)
 
         m_tools = mbar.addMenu("ツール")
-        act_open_it = QAction("統合ツールを開く", self)
-        act_open_it.triggered.connect(self.open_integratedtool)
-        m_tools.addAction(act_open_it)
+        act_agg = QAction("集計・分析…", self)
+        act_agg.triggered.connect(self.open_aggregate)
+        m_tools.addAction(act_agg)
 
         m_maint = mbar.addMenu("メンテナンス")
         act_cleanup = QAction("inputMD をクリーンアップ…", self)
@@ -366,8 +367,8 @@ class MainWindow(QMainWindow):
         btn_refresh.clicked.connect(self.reload_lists)
         tb.addWidget(btn_refresh)
 
-        btn_it = QPushButton("統合ツール")
-        btn_it.clicked.connect(self.open_integratedtool)
+        btn_it = QPushButton("集計・分析")
+        btn_it.clicked.connect(self.open_aggregate)
         tb.addWidget(btn_it)
 
         tb.addSeparator()
@@ -759,42 +760,18 @@ class MainWindow(QMainWindow):
 
         self.reload_lists()
 
-    def open_integratedtool(self):
-        it_dir = os.path.join(self.repo_root, "integratedtool")
-        entry = os.path.join(it_dir, "unified_report_viewer.py")
-        if not os.path.exists(entry):
-            QMessageBox.warning(self, "IntegratedTool", f"Not found: {entry}\nDid you init submodules?")
+    def open_aggregate(self):
+        if not self.ws:
+            QMessageBox.warning(self, "集計", "先にワークスペースを開いてください")
             return
-
-        # Run IntegratedTool using a python that exists on this OS.
-        # Prefer IntegratedTool's own venv if present; otherwise fall back to the current interpreter.
-        try:
-            env = os.environ.copy()
-            if self.ws:
-                env["XEL_TOOLKIT_WORKSPACE"] = self.ws.root
-                rp = self._ranges_path()
-                if rp and os.path.exists(rp):
-                    env["XEL_TOOLKIT_RANGES_JSON"] = rp
-
-            # IMPORTANT: On Windows, always prefer the current interpreter (sys.executable)
-            # because it's typically the uv-managed venv with PySide6 installed.
-            if os.name == "nt":
-                py = sys.executable
-                # If IntegratedTool has its own venv, we can prefer it, but only if it exists.
-                it_venv_py = os.path.join(it_dir, ".venv", "Scripts", "python.exe")
-                if os.path.exists(it_venv_py):
-                    py = it_venv_py
-            else:
-                py = os.path.join(it_dir, ".venv", "bin", "python")
-                if not os.path.exists(py):
-                    py = sys.executable or "python3"
-
-            if not py:
-                raise RuntimeError("No python interpreter found to launch IntegratedTool")
-
-            subprocess.Popen([py, entry], cwd=it_dir, env=env)
-        except Exception as e:
-            QMessageBox.critical(self, "IntegratedTool", str(e))
+        from .aggregate_dialog import AggregateDialog
+        dlg = AggregateDialog(
+            workspace_root=self.ws.root,
+            db_path=self.ws.db_path,
+            ranges_path=self._ranges_path(),
+            parent=self,
+        )
+        dlg.exec()
 
     def new_run(self):
         if not self.ws:

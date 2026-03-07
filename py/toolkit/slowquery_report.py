@@ -160,16 +160,9 @@ def generate_slowquery_reports_from_jsonl(
         if not by_ctx.empty:
             by_ctx.reset_index().to_excel(w, sheet_name="ByContext", index=False)
 
-    # 2) IntegratedTool-style aggregated workbook (primary)
+    # 2) Aggregated workbook (native AggregationProcessor)
     try:
-        import sys
-
-        repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-        it_dir = os.path.join(repo_root, "integratedtool")
-        if os.path.isdir(it_dir) and it_dir not in sys.path:
-            sys.path.insert(0, it_dir)
-
-        from aggregation_processor import AggregationProcessor  # type: ignore
+        from .aggregation_processor import AggregationProcessor
 
         ap = AggregationProcessor()
         df_it = df.copy()
