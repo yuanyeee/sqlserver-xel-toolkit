@@ -274,16 +274,9 @@ def generate_deadlock_report_from_jsonl(
     except Exception:
         legacy_xlsx_path = ""
 
-    # 2) IntegratedTool-style aggregated workbook (primary)
+    # 2) Aggregated workbook (native AggregationProcessor)
     try:
-        import sys
-
-        repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-        it_dir = os.path.join(repo_root, "integratedtool")
-        if os.path.isdir(it_dir) and it_dir not in sys.path:
-            sys.path.insert(0, it_dir)
-
-        from aggregation_processor import AggregationProcessor  # type: ignore
+        from .aggregation_processor import AggregationProcessor
 
         parsed_list: List[Dict[str, Any]] = []
         for it in items:
@@ -304,7 +297,6 @@ def generate_deadlock_report_from_jsonl(
         ap = AggregationProcessor()
         ap._process_deadlock_df(df_it, out_dir, source_files=None, forced_prefix=prefix)
     except Exception:
-        # If IntegratedTool export fails, keep legacy only.
         if legacy_xlsx_path:
             xlsx_path = legacy_xlsx_path
         else:
