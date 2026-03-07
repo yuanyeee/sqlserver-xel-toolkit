@@ -14,10 +14,6 @@ __pycache__/
 *.py[cod]
 .venv/
 
-# Submodule (IntegratedTool) local venvs/build envs
-integratedtool/.venv/
-integratedtool/.venv-build/
-
 # Output artifacts
 output/
 reports/
