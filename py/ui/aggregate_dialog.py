@@ -20,7 +20,6 @@ from ._qt import (
     Qt,
     QThread,
     Signal,
-    QDialog,
     QFileDialog,
     QLabel,
     QLineEdit,
@@ -34,6 +33,7 @@ from ._qt import (
 
 from PySide6.QtWidgets import (
     QCheckBox,
+    QDialog,
     QDialogButtonBox,
     QGroupBox,
     QHBoxLayout,
