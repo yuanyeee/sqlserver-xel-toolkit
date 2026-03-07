@@ -377,12 +377,15 @@ class AggregationProcessor:
                 return tables[0] if tables else ""
 
             df_work["_table_guess"] = df_work[sql_col].apply(_first_table)
-            by_table = (
-                df_work[df_work["_table_guess"] != ""]["_table_guess"]
-                .value_counts()
-                .reset_index()
+            tbl_counts = (
+                df_work[df_work["_table_guess"] != ""]
+                .groupby("_table_guess", as_index=False)
+                .size()
+                .rename(columns={"_table_guess": "table_guess", "size": "count"})
+                .sort_values("count", ascending=False)
+                .reset_index(drop=True)
             )
-            by_table.columns = ["table_guess", "count"]
+            by_table = tbl_counts if not tbl_counts.empty else pd.DataFrame()
         else:
             df_work["_table_guess"] = ""
             by_table = pd.DataFrame()
@@ -390,14 +393,18 @@ class AggregationProcessor:
         # SQL Fingerprint
         if sql_col and sql_col in df_work.columns:
             df_work["_fingerprint"] = df_work[sql_col].apply(fingerprint_sql)
-            by_fp = (
-                df_work[df_work["_fingerprint"] != ""]
-                .groupby("_fingerprint")["_dur_sec"]
-                .agg(count="count", mean_sec="mean", max_sec="max", total_sec="sum")
-                .sort_values("count", ascending=False)
-                .reset_index()
-            )
-            by_fp.columns = ["fingerprint", "count", "mean_sec", "max_sec", "total_sec"]
+            fp_filtered = df_work[df_work["_fingerprint"] != ""]
+            if not fp_filtered.empty:
+                by_fp = (
+                    fp_filtered
+                    .groupby("_fingerprint")["_dur_sec"]
+                    .agg(count="count", mean_sec="mean", max_sec="max", total_sec="sum")
+                    .sort_values("count", ascending=False)
+                    .reset_index()
+                    .rename(columns={"_fingerprint": "fingerprint"})
+                )
+            else:
+                by_fp = pd.DataFrame()
         else:
             by_fp = pd.DataFrame()
 
@@ -503,8 +510,13 @@ class AggregationProcessor:
         def _val_counts(col: Optional[str], label: str) -> pd.DataFrame:
             if not col or col not in df_work.columns:
                 return pd.DataFrame()
-            vc = df_work[col].value_counts().reset_index()
-            vc.columns = [label, "count"]
+            vc = (
+                df_work.groupby(col, as_index=False)
+                .size()
+                .rename(columns={col: label, "size": "count"})
+                .sort_values("count", ascending=False)
+                .reset_index(drop=True)
+            )
             return vc
 
         by_db = _val_counts(db_col, "database_name")
@@ -526,26 +538,38 @@ class AggregationProcessor:
         _add_table_guess(blocked_sql_col, blocked_tbl_col, "_blocked_tbl")
         _add_table_guess(blocking_sql_col, blocking_tbl_col, "_blocking_tbl")
 
-        by_blocked_tbl = df_work[df_work["_blocked_tbl"] != ""]["_blocked_tbl"].value_counts().reset_index()
-        if not by_blocked_tbl.empty:
-            by_blocked_tbl.columns = ["blocked_table", "count"]
-        by_blocking_tbl = df_work[df_work["_blocking_tbl"] != ""]["_blocking_tbl"].value_counts().reset_index()
-        if not by_blocking_tbl.empty:
-            by_blocking_tbl.columns = ["blocking_table", "count"]
+        def _tbl_counts(col: str, label: str) -> pd.DataFrame:
+            filtered = df_work[df_work[col] != ""]
+            if filtered.empty:
+                return pd.DataFrame()
+            return (
+                filtered.groupby(col, as_index=False)
+                .size()
+                .rename(columns={col: label, "size": "count"})
+                .sort_values("count", ascending=False)
+                .reset_index(drop=True)
+            )
+
+        by_blocked_tbl = _tbl_counts("_blocked_tbl", "blocked_table")
+        by_blocking_tbl = _tbl_counts("_blocking_tbl", "blocking_table")
 
         # SQL fingerprints
         def _fingerprint_agg(sql_col: Optional[str], label: str) -> pd.DataFrame:
             if not sql_col or sql_col not in df_work.columns:
                 return pd.DataFrame()
             df_work["_fp"] = df_work[sql_col].apply(fingerprint_sql)
+            fp_filtered = df_work[df_work["_fp"] != ""]
+            if fp_filtered.empty:
+                df_work.drop(columns=["_fp"], inplace=True, errors="ignore")
+                return pd.DataFrame()
             fp_g = (
-                df_work[df_work["_fp"] != ""]
+                fp_filtered
                 .groupby("_fp")["_dur_sec"]
                 .agg(count="count", mean_sec="mean", max_sec="max")
                 .sort_values("count", ascending=False)
                 .reset_index()
+                .rename(columns={"_fp": label})
             )
-            fp_g.columns = [label, "count", "mean_sec", "max_sec"]
             df_work.drop(columns=["_fp"], inplace=True, errors="ignore")
             return fp_g
 
