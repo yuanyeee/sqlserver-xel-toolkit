@@ -88,10 +88,17 @@ def extract_tables(sql: str) -> List[str]:
 # Helpers
 # ---------------------------------------------------------------------------
 
-# Matches every character openpyxl considers illegal (same as openpyxl's ILLEGAL_CHARACTERS_RE)
-# plus the Unicode surrogate / BOM range for safety.
+# Use openpyxl's own illegal-character regex as the authoritative source.
+# This guarantees we strip exactly the same characters that openpyxl rejects.
+try:
+    from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE as _OPENPYXL_ILLEGAL_RE
+except ImportError:
+    _OPENPYXL_ILLEGAL_RE = re.compile(r"[\x00-\x08\x0B\x0C\x0E-\x1F]")
+
+# Extended version: openpyxl's set  + surrogates / BOM / DEL / C1-control for extra safety
 _ILLEGAL_EXCEL_RE = re.compile(
-    r"[\x00-\x08\x0B\x0C\x0E-\x1F\x7F\x80-\x9F\uD800-\uDFFF\uFFFE\uFFFF]"
+    _OPENPYXL_ILLEGAL_RE.pattern
+    + r"|[\x7F\x80-\x9F\uD800-\uDFFF\uFFFE\uFFFF]"
 )
 
 
@@ -114,6 +121,23 @@ def _to_naive(s: pd.Series) -> pd.Series:
     except Exception:
         pass
     return s
+
+
+def _scrub_all_strings(df: "pd.DataFrame") -> "pd.DataFrame":
+    """Aggressively strip every non-printable character from ALL columns."""
+    df2 = df.copy()
+    _safe_re = re.compile(r"[^\x09\x0A\x0D\x20-\x7E\u00A0-\uD7FF\uE000-\uFFFD]")
+    for col in list(df2.columns):
+        try:
+            if pd.api.types.is_datetime64_any_dtype(df2[col]):
+                df2[col] = _to_naive(df2[col])
+            else:
+                df2[col] = df2[col].apply(
+                    lambda v: _safe_re.sub("", str(v)) if v is not None else v
+                )
+        except Exception:
+            df2[col] = df2[col].apply(lambda v: "")
+    return df2
 
 
 def _clean_for_excel(df: "pd.DataFrame") -> "pd.DataFrame":
@@ -145,14 +169,13 @@ def _write_xlsx(path: str, sheets: Dict[str, pd.DataFrame]) -> None:
             try:
                 df2.to_excel(w, sheet_name=sname, index=False)
             except IllegalCharacterError:
-                # Last-resort: coerce every object cell to a safe ASCII-range string
-                df3 = df2.copy()
-                for col in list(df3.columns):
-                    if df3[col].dtype == object:
-                        df3[col] = df3[col].apply(
-                            lambda v: re.sub(r"[^\x09\x0A\x0D\x20-\x7E]", "", str(v))
-                            if v is not None else v
-                        )
+                # First attempt failed – aggressively scrub ALL columns and
+                # write to a fresh sheet (delete the partially-written one).
+                try:
+                    del w.book[sname]
+                except (KeyError, Exception):
+                    pass
+                df3 = _scrub_all_strings(df)
                 df3.to_excel(w, sheet_name=sname, index=False)
 
 
@@ -400,15 +423,19 @@ class AggregationProcessor:
                 return tables[0] if tables else ""
 
             df_work["_table_guess"] = df_work[sql_col].apply(_first_table)
-            tbl_counts = (
-                df_work[df_work["_table_guess"] != ""]
-                .groupby("_table_guess", as_index=False)
-                .size()
-                .rename(columns={"_table_guess": "table_guess", "size": "count"})
-                .sort_values("count", ascending=False)
-                .reset_index(drop=True)
-            )
-            by_table = tbl_counts if not tbl_counts.empty else pd.DataFrame()
+            tbl_filtered = df_work[df_work["_table_guess"] != ""]
+            if not tbl_filtered.empty:
+                tbl_counts = (
+                    tbl_filtered
+                    .groupby("_table_guess")["_dur_sec"]
+                    .agg(count="count", mean_sec="mean", max_sec="max", sum_sec="sum")
+                    .sort_values("count", ascending=False)
+                    .reset_index()
+                    .rename(columns={"_table_guess": "table_guess"})
+                )
+                by_table = tbl_counts
+            else:
+                by_table = pd.DataFrame()
         else:
             df_work["_table_guess"] = ""
             by_table = pd.DataFrame()
@@ -520,11 +547,11 @@ class AggregationProcessor:
             g = (
                 df_work.dropna(subset=[col])
                 .groupby(col)["_dur_sec"]
-                .agg(count="count", mean_sec="mean", max_sec="max")
+                .agg(count="count", mean_sec="mean", max_sec="max", sum_sec="sum")
                 .sort_values("count", ascending=False)
                 .reset_index()
             )
-            g.columns = [label, "count", "mean_sec", "max_sec"]
+            g.columns = [label, "count", "mean_sec", "max_sec", "sum_sec"]
             return g
 
         by_blocked = _spid_agg(blocked_spid_col, "blocked_spid")
@@ -533,14 +560,15 @@ class AggregationProcessor:
         def _val_counts(col: Optional[str], label: str) -> pd.DataFrame:
             if not col or col not in df_work.columns:
                 return pd.DataFrame()
-            vc = (
-                df_work.groupby(col, as_index=False)
-                .size()
-                .rename(columns={col: label, "size": "count"})
+            g = (
+                df_work.dropna(subset=[col])
+                .groupby(col)["_dur_sec"]
+                .agg(count="count", mean_sec="mean", max_sec="max", sum_sec="sum")
                 .sort_values("count", ascending=False)
-                .reset_index(drop=True)
+                .reset_index()
             )
-            return vc
+            g.columns = [label, "count", "mean_sec", "max_sec", "sum_sec"]
+            return g
 
         by_db = _val_counts(db_col, "database_name")
         by_lock = _val_counts(lock_col, "lock_mode")
@@ -565,13 +593,15 @@ class AggregationProcessor:
             filtered = df_work[df_work[col] != ""]
             if filtered.empty:
                 return pd.DataFrame()
-            return (
-                filtered.groupby(col, as_index=False)
-                .size()
-                .rename(columns={col: label, "size": "count"})
+            g = (
+                filtered
+                .groupby(col)["_dur_sec"]
+                .agg(count="count", mean_sec="mean", max_sec="max", sum_sec="sum")
                 .sort_values("count", ascending=False)
-                .reset_index(drop=True)
+                .reset_index()
+                .rename(columns={col: label})
             )
+            return g
 
         by_blocked_tbl = _tbl_counts("_blocked_tbl", "blocked_table")
         by_blocking_tbl = _tbl_counts("_blocking_tbl", "blocking_table")
@@ -588,7 +618,7 @@ class AggregationProcessor:
             fp_g = (
                 fp_filtered
                 .groupby("_fp")["_dur_sec"]
-                .agg(count="count", mean_sec="mean", max_sec="max")
+                .agg(count="count", mean_sec="mean", max_sec="max", sum_sec="sum")
                 .sort_values("count", ascending=False)
                 .reset_index()
                 .rename(columns={"_fp": label})
@@ -646,10 +676,14 @@ class AggregationProcessor:
         end_jst=None,
         ranges=None,
         slow_threshold_sec: float = 3.0,
+        split_by_date: bool = False,
     ) -> Dict[str, str]:
         """Aggregate multiple JSONL files into combined analysis reports.
 
-        Returns dict of {type: xlsx_path}.
+        When *split_by_date* is True the output is organised into per-date
+        sub-folders (``YYYY-MM-DD/``) with date-prefixed file names.
+
+        Returns dict of {type: xlsx_path} (or {type/date: xlsx_path}).
         """
         from .xel_jsonl import iter_events
         from .timeutil import in_range, parse_iso, to_jst
@@ -662,6 +696,15 @@ class AggregationProcessor:
             prefix = f"agg_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
         out: Dict[str, str] = {}
+
+        def _date_key(timestamp_str: Optional[str]) -> str:
+            """Return JST date string 'YYYY-MM-DD' from an ISO timestamp."""
+            if not timestamp_str:
+                return "unknown"
+            dt = parse_iso(timestamp_str)
+            if dt is None:
+                return "unknown"
+            return to_jst(dt).strftime("%Y-%m-%d")
 
         # ---- Deadlock ----
         if deadlock_jsonl_files:
@@ -703,9 +746,21 @@ class AggregationProcessor:
                     })
 
             if parsed_list:
-                df_d = pd.DataFrame({"parsed_data": parsed_list})
-                p = self._process_deadlock_df(df_d, out_dir, forced_prefix=prefix)
-                out["deadlock"] = p
+                if split_by_date:
+                    from collections import defaultdict
+                    by_date: Dict[str, list] = defaultdict(list)
+                    for item in parsed_list:
+                        by_date[_date_key(item.get("timestamp"))].append(item)
+                    for date_str, items in sorted(by_date.items()):
+                        sub_dir = os.path.join(out_dir, date_str)
+                        date_prefix = date_str.replace("-", "")
+                        df_d = pd.DataFrame({"parsed_data": items})
+                        p = self._process_deadlock_df(df_d, sub_dir, forced_prefix=date_prefix)
+                        out[f"deadlock/{date_str}"] = p
+                else:
+                    df_d = pd.DataFrame({"parsed_data": parsed_list})
+                    p = self._process_deadlock_df(df_d, out_dir, forced_prefix=prefix)
+                    out["deadlock"] = p
 
         # ---- Blocking ----
         if blocking_jsonl_files:
@@ -759,9 +814,21 @@ class AggregationProcessor:
                         "blocking_table_guess": _extract_table_from_sql(blocking_sql or ""),
                     })
             if rows:
-                df_b = pd.DataFrame(rows)
-                p = self._process_blocking_df(df_b, out_dir, forced_prefix=prefix)
-                out["blocking"] = p
+                if split_by_date:
+                    from collections import defaultdict
+                    by_date_rows: Dict[str, list] = defaultdict(list)
+                    for r in rows:
+                        by_date_rows[_date_key(r.get("timestamp"))].append(r)
+                    for date_str, date_rows in sorted(by_date_rows.items()):
+                        sub_dir = os.path.join(out_dir, date_str)
+                        date_prefix = date_str.replace("-", "")
+                        df_b = pd.DataFrame(date_rows)
+                        p = self._process_blocking_df(df_b, sub_dir, forced_prefix=date_prefix)
+                        out[f"blocking/{date_str}"] = p
+                else:
+                    df_b = pd.DataFrame(rows)
+                    p = self._process_blocking_df(df_b, out_dir, forced_prefix=prefix)
+                    out["blocking"] = p
 
         # ---- SlowQuery ----
         if slowquery_jsonl_files:
@@ -813,8 +880,20 @@ class AggregationProcessor:
                         "sql_text": sql,
                     })
             if rows:
-                df_s = pd.DataFrame(rows)
-                p = self._process_slowquery_df(df_s, out_dir, forced_prefix=prefix)
-                out["slowquery"] = p
+                if split_by_date:
+                    from collections import defaultdict
+                    by_date_rows: Dict[str, list] = defaultdict(list)
+                    for r in rows:
+                        by_date_rows[_date_key(r.get("timestamp"))].append(r)
+                    for date_str, date_rows in sorted(by_date_rows.items()):
+                        sub_dir = os.path.join(out_dir, date_str)
+                        date_prefix = date_str.replace("-", "")
+                        df_s = pd.DataFrame(date_rows)
+                        p = self._process_slowquery_df(df_s, sub_dir, forced_prefix=date_prefix)
+                        out[f"slowquery/{date_str}"] = p
+                else:
+                    df_s = pd.DataFrame(rows)
+                    p = self._process_slowquery_df(df_s, out_dir, forced_prefix=prefix)
+                    out["slowquery"] = p
 
         return out

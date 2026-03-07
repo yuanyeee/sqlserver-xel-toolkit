@@ -57,6 +57,7 @@ class AggregateWorker(QThread):
         end_jst=None,
         ranges=None,
         slow_threshold_sec: float = 3.0,
+        split_by_date: bool = False,
     ):
         super().__init__()
         self.deadlock_jsonl = deadlock_jsonl
@@ -68,6 +69,7 @@ class AggregateWorker(QThread):
         self.end_jst = end_jst
         self.ranges = ranges or []
         self.slow_threshold_sec = slow_threshold_sec
+        self.split_by_date = split_by_date
 
     def run(self):
         try:
@@ -94,6 +96,7 @@ class AggregateWorker(QThread):
                 end_jst=self.end_jst,
                 ranges=self.ranges,
                 slow_threshold_sec=self.slow_threshold_sec,
+                split_by_date=self.split_by_date,
             )
 
             for typ, path in out.items():
@@ -158,6 +161,13 @@ class AggregateWidget(QWidget):
         h_range.addWidget(self._chk_ranges)
         h_range.addStretch()
         opt_layout.addLayout(h_range)
+
+        h_split = QHBoxLayout()
+        self._chk_split_date = QCheckBox("日付で分割（日付ごとにサブフォルダを作成）")
+        self._chk_split_date.setChecked(False)
+        h_split.addWidget(self._chk_split_date)
+        h_split.addStretch()
+        opt_layout.addLayout(h_split)
 
         h_out = QHBoxLayout()
         default_out = os.path.join(workspace_root, "aggregate", datetime.now().strftime("%Y%m%d_%H%M%S"))
@@ -331,6 +341,8 @@ class AggregateWidget(QWidget):
         self._btn_run.setEnabled(False)
         self._progress.setVisible(True)
 
+        split_date = self._chk_split_date.isChecked()
+
         self._worker = AggregateWorker(
             deadlock_jsonl=dead_files,
             blocking_jsonl=block_files,
@@ -339,6 +351,7 @@ class AggregateWidget(QWidget):
             prefix=prefix,
             ranges=ranges,
             slow_threshold_sec=slow_thr,
+            split_by_date=split_date,
         )
         self._worker.log.connect(self._log.append)
         self._worker.finished_ok.connect(self._on_done)
