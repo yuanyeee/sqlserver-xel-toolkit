@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
     QAbstractItemView,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QListWidget,
     QListWidgetItem,
     QMessageBox,
@@ -56,12 +57,32 @@ class InputMdBrowserWidget(QWidget):
             os.path.join(workspace_root, "inputMD") if workspace_root else None
         )
 
+        self._search_mode = False
+
         layout = QVBoxLayout(self)
         layout.setContentsMargins(4, 4, 4, 4)
 
         # ---- Info label ----
         self._info = QLabel("inputMD: (ワークスペース未設定)")
         layout.addWidget(self._info)
+
+        # ---- Search bar ----
+        search_row = QHBoxLayout()
+        search_row.addWidget(QLabel("検索:"))
+        self._search_edit = QLineEdit()
+        self._search_edit.setPlaceholderText("キーワード（ファイル名・本文を検索）")
+        self._search_edit.returnPressed.connect(self._do_search)
+        search_row.addWidget(self._search_edit)
+        self._btn_search = QPushButton("検索実行")
+        self._btn_search.clicked.connect(self._do_search)
+        search_row.addWidget(self._btn_search)
+        self._btn_clear_search = QPushButton("クリア")
+        self._btn_clear_search.clicked.connect(self._clear_search)
+        self._btn_clear_search.setEnabled(False)
+        search_row.addWidget(self._btn_clear_search)
+        self._search_result_label = QLabel("")
+        search_row.addWidget(self._search_result_label)
+        layout.addLayout(search_row)
 
         # ---- 4-pane splitter ----
         splitter = QSplitter(Qt.Horizontal)
@@ -258,6 +279,62 @@ class InputMdBrowserWidget(QWidget):
             self._preview.setHtml(html)
         except Exception as e:
             self._preview.setPlainText(f"読み込みエラー: {e}")
+
+    # ------------------------------------------------------------------
+    # Search
+    # ------------------------------------------------------------------
+
+    def _do_search(self) -> None:
+        query = self._search_edit.text().strip()
+        if not query or not self._inputmd_root or not os.path.isdir(self._inputmd_root):
+            return
+        self._search_mode = True
+        self._btn_clear_search.setEnabled(True)
+        self._src_list.clearSelection()
+        self._sub_list.clear()
+        self._file_list.clear()
+        self._preview.clear()
+
+        query_lower = query.lower()
+        matches: list[tuple[str, str]] = []  # (label, abs_path)
+        for dirpath, _, files in os.walk(self._inputmd_root):
+            for fn in sorted(files):
+                if not fn.endswith(".md"):
+                    continue
+                abs_path = os.path.join(dirpath, fn)
+                rel = os.path.relpath(abs_path, self._inputmd_root)
+                # Match filename
+                if query_lower in fn.lower():
+                    matches.append((rel, abs_path))
+                    continue
+                # Match file content
+                try:
+                    with open(abs_path, "r", encoding="utf-8", errors="ignore") as f:
+                        content = f.read()
+                    if query_lower in content.lower():
+                        matches.append((rel, abs_path))
+                except Exception:
+                    pass
+
+        self._search_result_label.setText(f"{len(matches)} 件ヒット")
+        for label, abs_path in matches:
+            it = QListWidgetItem(label)
+            it.setData(Qt.ItemDataRole.UserRole, abs_path)
+            self._file_list.addItem(it)
+        if self._file_list.count():
+            self._file_list.setCurrentRow(0)
+
+    def _clear_search(self) -> None:
+        self._search_mode = False
+        self._search_edit.clear()
+        self._search_result_label.setText("")
+        self._btn_clear_search.setEnabled(False)
+        self._file_list.clear()
+        self._preview.clear()
+        # Restore source selection if any
+        sel = self._src_list.selectedItems()
+        if sel:
+            self._on_select_source()
 
     # ------------------------------------------------------------------
     # Trash / cleanup
