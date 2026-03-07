@@ -66,6 +66,7 @@ from .workspace import (
 
 from .time_range_dialog import TimeRangeDialog, TimeRangeWidget, load_ranges
 from .aggregate_dialog import AggregateWidget
+from .inputmd_browser import InputMdBrowserWidget
 from .cleanup_inputmd_dialog import CleanupInputMdDialog
 from .delete_run_dialog import DeleteRunDialog
 from .delete_file_dialog import DeleteFileDialog
@@ -427,7 +428,11 @@ class MainWindow(QMainWindow):
         self._run_tab = RunTab()
         self._tabs.addTab(self._run_tab, "▶ 新規実行")
 
-        # Tab 2: 集計・分析 (AggregateWidget – workspace set later)
+        # Tab 2: inputMD 閲覧
+        self._inputmd_tab = InputMdBrowserWidget()
+        self._tabs.addTab(self._inputmd_tab, "📁 inputMD")
+
+        # Tab 3: 集計・分析 (AggregateWidget – workspace set later)
         self._agg_widget = AggregateWidget(
             workspace_root="",
             db_path="",
@@ -435,14 +440,17 @@ class MainWindow(QMainWindow):
         )
         self._tabs.addTab(self._agg_widget, "📊 集計・分析")
 
-        # Tab 3: 時間範囲
+        # Tab 4: 時間範囲
         self._range_widget = TimeRangeWidget(None)
         self._range_widget.ranges_saved.connect(self._on_ranges_saved)
         self._tabs.addTab(self._range_widget, "⏰ 時間範囲")
 
-        # Tab 4: 設定・管理
+        # Tab 5: 設定・管理
         self._settings_tab = SettingsTab()
         self._tabs.addTab(self._settings_tab, "⚙ 設定・管理")
+
+        # Tab-change: lazy-refresh inputMD browser when tab becomes active
+        self._tabs.currentChanged.connect(self._on_tab_changed)
 
         # ---- Slim menu bar ----
         mbar = self.menuBar()
@@ -533,6 +541,7 @@ class MainWindow(QMainWindow):
         rp = self._ranges_path()
         self._agg_widget.refresh_workspace(d, db_path, rp)
         self._range_widget.set_ranges_path(rp)
+        self._inputmd_tab.set_workspace(d)
         self._settings_tab.ws_label.setText(d)
         self.reload_lists()
 
@@ -715,6 +724,24 @@ class MainWindow(QMainWindow):
             conn.close()
 
     # -----------------------------------------------------------------------
+    # Tab change – lazy refresh
+    # -----------------------------------------------------------------------
+
+    # Tab index constants (update here if tabs are reordered)
+    TAB_REPORTS   = 0
+    TAB_NEW_RUN   = 1
+    TAB_INPUTMD   = 2
+    TAB_AGGREGATE = 3
+    TAB_RANGES    = 4
+    TAB_SETTINGS  = 5
+
+    def _on_tab_changed(self, index: int) -> None:
+        """Lazy-refresh content when switching to certain tabs."""
+        if index == self.TAB_INPUTMD and self.ws:
+            # Refresh inputMD file counts in case a new run created new files
+            self._inputmd_tab.refresh()
+
+    # -----------------------------------------------------------------------
     # Time range tab
     # -----------------------------------------------------------------------
 
@@ -748,7 +775,7 @@ class MainWindow(QMainWindow):
     def new_run(self):
         if not self.ws:
             QMessageBox.warning(self, "ワークスペース", "先にワークスペースを開いてください")
-            self._tabs.setCurrentIndex(4)
+            self._tabs.setCurrentIndex(self.TAB_SETTINGS)
             return
 
         files = self._run_tab.selected_files()
@@ -803,7 +830,7 @@ class MainWindow(QMainWindow):
 
         self._run_tab.clear_log()
         self._run_tab.btn_run.setEnabled(False)
-        self._tabs.setCurrentIndex(1)  # stay on run tab to show log
+        self._tabs.setCurrentIndex(self.TAB_NEW_RUN)  # stay on run tab to show log
 
         self.worker = RunWorker(
             self.repo_root, files, out_dir, slow,
@@ -879,11 +906,12 @@ class MainWindow(QMainWindow):
         self._run_tab.btn_run.setEnabled(True)
         QMessageBox.information(self, "完了", f"レポート生成先: {out_dir}")
         self.reload_lists()
-        # Refresh aggregate run list
+        # Refresh aggregate run list and inputMD browser
         rp = self._ranges_path()
         self._agg_widget.refresh_workspace(self.ws.root, self.ws.db_path, rp)
+        self._inputmd_tab.refresh()
         # Switch to report tab
-        self._tabs.setCurrentIndex(0)
+        self._tabs.setCurrentIndex(self.TAB_REPORTS)
 
     def _read_span_meta(self, meta_for_path: str):
         mp = meta_for_path + ".meta.json"
@@ -1031,7 +1059,7 @@ class MainWindow(QMainWindow):
         if QMessageBox.question(self, "確認", "選択したFileのレポートを再生成しますか？\n(既存のレポートは上書きされます)") != QMessageBox.StandardButton.Yes:
             return
 
-        self._tabs.setCurrentIndex(1)  # show run tab (log)
+        self._tabs.setCurrentIndex(self.TAB_NEW_RUN)  # show run tab (log)
         self._run_regen_for_file(run_id=run_id, file_id=file_id, run_out_dir=run_out_dir, file_out_dir=file_out_dir, source_xel=source_xel)
 
     # -----------------------------------------------------------------------
