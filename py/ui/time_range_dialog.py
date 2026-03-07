@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
     QFormLayout,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QListWidget,
@@ -205,22 +206,28 @@ class TimeRangeWidget(QWidget):
         tpl_row.addStretch()
         right.addLayout(tpl_row)
 
-        # Quick-template presets
-        preset_row = QHBoxLayout()
-        preset_row.addWidget(QLabel("プリセット:"))
-        for label, sh, eh in [
-            ("08-17時", "08:00", "17:00"),
-            ("07-21時", "07:00", "21:00"),
-            ("09-18時", "09:00", "18:00"),
-            ("00-24時", "00:00", "23:59"),
-        ]:
-            b = QPushButton(label)
-            b.setMaximumWidth(64)
-            start_h, end_h = sh, eh
-            b.clicked.connect(lambda _, s=start_h, e=end_h: self._apply_preset(s, e))
-            preset_row.addWidget(b)
-        preset_row.addStretch()
-        right.addLayout(preset_row)
+        # Quick-template presets (grid, 3 columns)
+        right.addWidget(QLabel("プリセット（クリックで選択中の日に追加、未選択なら今日に追加）:"))
+        preset_grid = QGridLayout()
+        preset_grid.setHorizontalSpacing(4)
+        preset_grid.setVerticalSpacing(4)
+        _PRESETS = [
+            ("午前\n08:00–12:00",   "08:00", "12:00"),
+            ("午後\n13:00–17:00",   "13:00", "17:00"),
+            ("終日業務\n08:00–17:00","08:00", "17:00"),
+            ("業務\n09:00–18:00",   "09:00", "18:00"),
+            ("延長\n07:00–21:00",   "07:00", "21:00"),
+            ("全日\n00:00–23:59",   "00:00", "23:59"),
+            ("早朝\n06:00–09:00",   "06:00", "09:00"),
+            ("夜間\n17:00–22:00",   "17:00", "22:00"),
+            ("深夜\n22:00–06:00+1", "22:00", "06:00"),
+        ]
+        for i, (lbl, sh, eh) in enumerate(_PRESETS):
+            b = QPushButton(lbl)
+            b.setFixedHeight(48)
+            b.clicked.connect(lambda _, s=sh, e=eh: self._apply_preset(s, e))
+            preset_grid.addWidget(b, i // 3, i % 3)
+        right.addLayout(preset_grid)
 
         # ---- Manual input ----
         manual_label = QLabel("手動入力:")
@@ -374,12 +381,15 @@ class TimeRangeWidget(QWidget):
     # ------------------------------------------------------------------
 
     def _apply_preset(self, start_hm: str, end_hm: str) -> None:
-        """Set combo values and apply to selected dates immediately."""
+        """Apply preset to selected dates; auto-add today if none selected."""
+        if not self.selected_dates:
+            self._toggle_date(QDate.currentDate())
         self._start_combo.setCurrentText(start_hm)
         self._end_combo.setCurrentText(end_hm)
-        self._apply_template()
+        # For cross-midnight presets (end <= start), end date is next day
+        self._apply_template(cross_midnight=(end_hm <= start_hm))
 
-    def _apply_template(self) -> None:
+    def _apply_template(self, cross_midnight: bool = False) -> None:
         if not self.selected_dates:
             QMessageBox.warning(self, "日付未選択",
                                 "カレンダーで日付をクリックして選択してください")
@@ -394,7 +404,11 @@ class TimeRangeWidget(QWidget):
         for d in self.selected_dates:
             date_str = d.toString("yyyy-MM-dd")
             s = f"{date_str} {start_hm}"
-            e = f"{date_str} {end_hm}"
+            if cross_midnight or end_hm <= start_hm:
+                next_date = d.addDays(1).toString("yyyy-MM-dd")
+                e = f"{next_date} {end_hm}"
+            else:
+                e = f"{date_str} {end_hm}"
             if s >= e:
                 continue
             # Avoid exact duplicate
