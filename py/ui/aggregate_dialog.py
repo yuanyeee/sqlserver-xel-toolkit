@@ -28,13 +28,11 @@ from ._qt import (
     QMessageBox,
     QPushButton,
     QVBoxLayout,
-    QWidget,
 )
 
 from PySide6.QtWidgets import (
     QCheckBox,
     QDialog,
-    QDialogButtonBox,
     QGroupBox,
     QHBoxLayout,
     QProgressBar,
@@ -176,7 +174,6 @@ class AggregateDialog(QDialog):
         run_layout = QVBoxLayout(run_group)
         self._run_list = QListWidget()
         self._run_list.setSelectionMode(QListWidget.SelectionMode.MultiSelection)
-        self._load_runs()
         run_layout.addWidget(self._run_list)
         layout.addWidget(run_group)
 
@@ -186,6 +183,9 @@ class AggregateDialog(QDialog):
         self._log.setMaximumHeight(160)
         layout.addWidget(QLabel("ログ:"))
         layout.addWidget(self._log)
+
+        # _load_runs は self._log 生成後に呼ぶ（例外メッセージをログに出すため）
+        self._load_runs()
 
         # ---- Progress ----
         self._progress = QProgressBar()
@@ -246,7 +246,7 @@ class AggregateDialog(QDialog):
             if run_ids:
                 placeholders = ",".join("?" * len(run_ids))
                 rows = conn.execute(
-                    f"SELECT out_dir FROM runs WHERE id IN ({placeholders})", run_ids
+                    f"SELECT out_dir FROM runs WHERE id IN ({placeholders})", tuple(run_ids)
                 ).fetchall()
             else:
                 rows = conn.execute("SELECT out_dir FROM runs").fetchall()
