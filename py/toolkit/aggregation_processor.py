@@ -88,7 +88,11 @@ def extract_tables(sql: str) -> List[str]:
 # Helpers
 # ---------------------------------------------------------------------------
 
-_ILLEGAL_EXCEL_RE = re.compile(r"[\x00-\x08\x0B\x0C\x0E-\x1F]")
+# Matches every character openpyxl considers illegal (same as openpyxl's ILLEGAL_CHARACTERS_RE)
+# plus the Unicode surrogate / BOM range for safety.
+_ILLEGAL_EXCEL_RE = re.compile(
+    r"[\x00-\x08\x0B\x0C\x0E-\x1F\x7F\x80-\x9F\uD800-\uDFFF\uFFFE\uFFFF]"
+)
 
 
 def _clean(s: Any) -> Any:
@@ -112,25 +116,44 @@ def _to_naive(s: pd.Series) -> pd.Series:
     return s
 
 
+def _clean_for_excel(df: "pd.DataFrame") -> "pd.DataFrame":
+    """Return a copy of df with all object columns sanitized for Excel output."""
+    df2 = df.copy()
+    for col in list(df2.columns):
+        try:
+            if pd.api.types.is_datetime64_any_dtype(df2[col]):
+                df2[col] = _to_naive(df2[col])
+            elif df2[col].dtype == object:
+                df2[col] = df2[col].apply(_clean)
+        except Exception:
+            try:
+                df2[col] = df2[col].astype(str).apply(_clean)
+            except Exception:
+                df2[col] = df2[col].apply(lambda v: "")
+    return df2
+
+
 def _write_xlsx(path: str, sheets: Dict[str, pd.DataFrame]) -> None:
     """Write a multi-sheet Excel workbook."""
+    from openpyxl.utils.exceptions import IllegalCharacterError
+
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     with pd.ExcelWriter(path, engine="openpyxl") as w:
         for name, df in sheets.items():
-            # Truncate sheet name to 31 chars (Excel limit)
             sname = name[:31]
-            # Strip tz-aware datetimes and clean object columns
-            df2 = df.copy()
-            for col in df2.columns:
-                try:
-                    if pd.api.types.is_datetime64_any_dtype(df2[col]):
-                        df2[col] = _to_naive(df2[col])
-                    elif df2[col].dtype == object:
-                        df2[col] = df2[col].apply(_clean)
-                except Exception:
-                    # Fallback: convert column to string
-                    df2[col] = df2[col].astype(str).apply(_clean)
-            df2.to_excel(w, sheet_name=sname, index=False)
+            df2 = _clean_for_excel(df)
+            try:
+                df2.to_excel(w, sheet_name=sname, index=False)
+            except IllegalCharacterError:
+                # Last-resort: coerce every object cell to a safe ASCII-range string
+                df3 = df2.copy()
+                for col in list(df3.columns):
+                    if df3[col].dtype == object:
+                        df3[col] = df3[col].apply(
+                            lambda v: re.sub(r"[^\x09\x0A\x0D\x20-\x7E]", "", str(v))
+                            if v is not None else v
+                        )
+                df3.to_excel(w, sheet_name=sname, index=False)
 
 
 # ---------------------------------------------------------------------------
