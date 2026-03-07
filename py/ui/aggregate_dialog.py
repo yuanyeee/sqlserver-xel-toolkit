@@ -2,10 +2,7 @@
 
 Native aggregation dialog — replaces the IntegratedTool submodule launcher.
 
-Features:
-- Select runs/time-range to aggregate across
-- Choose analysis types (DeadLock / SlowQuery / Blocking)
-- Run native AggregationProcessor and open output folder
+AggregateWidget can be embedded directly in a tab or wrapped in AggregateDialog.
 """
 
 from __future__ import annotations
@@ -28,6 +25,7 @@ from ._qt import (
     QMessageBox,
     QPushButton,
     QVBoxLayout,
+    QWidget,
 )
 
 from PySide6.QtWidgets import (
@@ -102,23 +100,28 @@ class AggregateWorker(QThread):
                 self.log.emit(f"  [{typ}] → {path}")
 
             self.finished_ok.emit(out)
-        except Exception as e:
+        except Exception:
             import traceback
             self.finished_err.emit(traceback.format_exc())
 
 
-class AggregateDialog(QDialog):
-    """Dialog to aggregate JSONL files from selected workspace runs."""
+class AggregateWidget(QWidget):
+    """Embeddable aggregation widget (used in tab or wrapped in dialog)."""
 
-    def __init__(self, workspace_root: str, db_path: str, ranges_path: Optional[str], parent=None):
+    def __init__(
+        self,
+        workspace_root: str,
+        db_path: str,
+        ranges_path: Optional[str],
+        parent=None,
+        *,
+        show_close_button: bool = False,
+    ):
         super().__init__(parent)
         self.workspace_root = workspace_root
         self.db_path = db_path
         self.ranges_path = ranges_path
         self._worker: Optional[AggregateWorker] = None
-
-        self.setWindowTitle("統合集計・分析 (IntegratedTool 相当)")
-        self.resize(700, 600)
 
         layout = QVBoxLayout(self)
 
@@ -199,17 +202,34 @@ class AggregateDialog(QDialog):
         self._btn_open = QPushButton("出力フォルダを開く")
         self._btn_open.clicked.connect(self._open_out)
         self._btn_open.setEnabled(False)
-        self._btn_close = QPushButton("閉じる")
-        self._btn_close.clicked.connect(self.accept)
 
         btn_row = QHBoxLayout()
         btn_row.addWidget(self._btn_run)
         btn_row.addWidget(self._btn_open)
         btn_row.addStretch()
-        btn_row.addWidget(self._btn_close)
+
+        if show_close_button:
+            self._btn_close = QPushButton("閉じる")
+            btn_row.addWidget(self._btn_close)
+            # caller must connect this to dialog.accept()
+
         layout.addLayout(btn_row)
 
         self._out_dir_result: Optional[str] = None
+
+    def refresh_workspace(self, workspace_root: str, db_path: str, ranges_path: Optional[str]) -> None:
+        """Update workspace context and reload the run list."""
+        self.workspace_root = workspace_root
+        self.db_path = db_path
+        self.ranges_path = ranges_path
+        default_out = os.path.join(workspace_root, "aggregate", datetime.now().strftime("%Y%m%d_%H%M%S"))
+        self._out_edit.setText(default_out)
+        self._chk_ranges.setChecked(bool(ranges_path and os.path.exists(ranges_path)))
+        self._run_list.clear()
+        self._log.clear()
+        self._btn_open.setEnabled(False)
+        self._out_dir_result = None
+        self._load_runs()
 
     def _load_runs(self):
         """Populate run list from workspace DB."""
@@ -341,3 +361,19 @@ class AggregateDialog(QDialog):
         self._btn_run.setEnabled(True)
         self._log.append(f"エラー:\n{msg}")
         QMessageBox.critical(self, "集計エラー", msg[:500])
+
+
+class AggregateDialog(QDialog):
+    """Thin dialog wrapper around AggregateWidget."""
+
+    def __init__(self, workspace_root: str, db_path: str, ranges_path: Optional[str], parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("統合集計・分析")
+        self.resize(700, 620)
+
+        layout = QVBoxLayout(self)
+        self._widget = AggregateWidget(
+            workspace_root, db_path, ranges_path, self, show_close_button=True
+        )
+        self._widget._btn_close.clicked.connect(self.accept)
+        layout.addWidget(self._widget)

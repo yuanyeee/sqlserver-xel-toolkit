@@ -3,9 +3,9 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import dataclass
-from typing import List
+from typing import List, Optional
 
-from PySide6.QtCore import Qt, QDate
+from PySide6.QtCore import Qt, QDate, Signal
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QCalendarWidget,
@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QVBoxLayout,
+    QWidget,
     QLineEdit,
 )
 
@@ -46,21 +47,22 @@ def load_ranges(path: str) -> List[RangeItem]:
 
 
 def save_ranges(path: str, items: List[RangeItem]) -> None:
-    os.makedirs(os.path.dirname(path), exist_ok=True)
+    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         json.dump({"ranges": [{"start": i.start, "end": i.end} for i in items]}, f, ensure_ascii=False, indent=2)
 
 
-class TimeRangeDialog(QDialog):
-    def __init__(self, ranges_path: str, parent=None):
+class TimeRangeWidget(QWidget):
+    """Embeddable time-range editor (used in tab or wrapped in dialog)."""
+
+    ranges_saved = Signal()  # emitted after a successful save
+
+    def __init__(self, ranges_path: Optional[str], parent=None, *, show_dialog_buttons: bool = False):
         super().__init__(parent)
-        self.setWindowTitle("出力時間範囲")
-        self.resize(860, 520)
-
-        self.ranges_path = ranges_path
-        self.items: List[RangeItem] = load_ranges(ranges_path)
-
+        self.ranges_path: Optional[str] = ranges_path
+        self.items: List[RangeItem] = load_ranges(ranges_path) if ranges_path else []
         self.selected_dates: List[QDate] = []
+        self._show_dialog_buttons = show_dialog_buttons
 
         layout = QVBoxLayout(self)
         layout.addWidget(QLabel("複数の時間帯を追加できます（JST / 分単位）。\n日付はカレンダーから複数選択できます。"))
@@ -145,17 +147,41 @@ class TimeRangeDialog(QDialog):
 
         btns.addStretch(1)
 
-        self.btn_ok = QPushButton("OK")
-        self.btn_ok.clicked.connect(self.accept)
-        btns.addWidget(self.btn_ok)
-
-        self.btn_cancel = QPushButton("キャンセル")
-        self.btn_cancel.clicked.connect(self.reject)
-        btns.addWidget(self.btn_cancel)
+        if show_dialog_buttons:
+            # OK/Cancel for use in dialog
+            self.btn_ok = QPushButton("OK")
+            btns.addWidget(self.btn_ok)
+            self.btn_cancel = QPushButton("キャンセル")
+            btns.addWidget(self.btn_cancel)
+        else:
+            # Save button for use in tab
+            self.btn_save = QPushButton("保存")
+            self.btn_save.clicked.connect(self.save)
+            btns.addWidget(self.btn_save)
 
         layout.addLayout(btns)
 
         self.refresh()
+
+    def set_ranges_path(self, path: Optional[str]) -> None:
+        """Update the path and reload ranges from the new file."""
+        self.ranges_path = path
+        self.items = load_ranges(path) if path else []
+        self.selected_dates = []
+        self.refresh()
+
+    def save(self) -> bool:
+        """Save current items to disk. Returns True on success."""
+        if not self.ranges_path:
+            QMessageBox.warning(self, "保存", "ワークスペースを先に開いてください")
+            return False
+        try:
+            save_ranges(self.ranges_path, self.items)
+            self.ranges_saved.emit()
+            return True
+        except Exception as e:
+            QMessageBox.critical(self, "保存失敗", str(e))
+            return False
 
     def add_selected_date(self):
         d = self.calendar.selectedDate()
@@ -245,10 +271,21 @@ class TimeRangeDialog(QDialog):
         self.items = []
         self.refresh()
 
-    def accept(self):
-        try:
-            save_ranges(self.ranges_path, self.items)
-        except Exception as e:
-            QMessageBox.critical(self, "保存失敗", str(e))
-            return
-        super().accept()
+
+class TimeRangeDialog(QDialog):
+    """Thin dialog wrapper around TimeRangeWidget."""
+
+    def __init__(self, ranges_path: str, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("出力時間範囲")
+        self.resize(860, 520)
+
+        layout = QVBoxLayout(self)
+        self._widget = TimeRangeWidget(ranges_path, self, show_dialog_buttons=True)
+        self._widget.btn_ok.clicked.connect(self._ok)
+        self._widget.btn_cancel.clicked.connect(self.reject)
+        layout.addWidget(self._widget)
+
+    def _ok(self):
+        if self._widget.save():
+            self.accept()
