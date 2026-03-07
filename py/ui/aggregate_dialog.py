@@ -360,7 +360,20 @@ class AggregateWidget(QWidget):
         self._progress.setVisible(False)
         self._btn_run.setEnabled(True)
         self._log.append(f"エラー:\n{msg}")
-        QMessageBox.critical(self, "集計エラー", msg[:500])
+        # Show full traceback in a scrollable dialog instead of truncating
+        from PySide6.QtWidgets import QDialog, QTextEdit, QVBoxLayout, QPushButton
+        dlg = QDialog(self)
+        dlg.setWindowTitle("集計エラー")
+        dlg.resize(700, 400)
+        layout = QVBoxLayout(dlg)
+        te = QTextEdit()
+        te.setReadOnly(True)
+        te.setPlainText(msg)
+        layout.addWidget(te)
+        btn = QPushButton("OK")
+        btn.clicked.connect(dlg.accept)
+        layout.addWidget(btn)
+        dlg.exec()
 
 
 class AggregateDialog(QDialog):
