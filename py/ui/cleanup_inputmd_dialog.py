@@ -27,7 +27,7 @@ class CleanupPlan:
 
 
 class CleanupInputMdDialog(QDialog):
-    """Delete inputMD content by source-stem and date subfolders."""
+    """Delete inputMD content by event type (Blocking/SlowQuery/DeadLock) and date subfolders."""
 
     def __init__(self, workspace_root: str, parent=None):
         super().__init__(parent)

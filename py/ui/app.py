@@ -95,9 +95,8 @@ def _hash8(s: str) -> str:
 
 
 def inputmd_dir(workspace_root: str, input_path: str) -> str:
-    key = _hash8(str(Path(input_path).resolve()))
-    safe = _safe_stem(input_path)
-    return str(Path(workspace_root) / "inputMD" / f"{safe}_{key}")
+    """Return the inputMD root directory (shared across all inputs)."""
+    return str(Path(workspace_root) / "inputMD")
 
 
 def stable_run_dir(workspace_root: str, input_path: str) -> str:
@@ -788,42 +787,7 @@ class MainWindow(QMainWindow):
         except ValueError:
             slow = 3.0
 
-        # inputMD mode
-        from .settings import load_config, save_config
-        cfg = load_config()
-
-        existing = []
-        for x in files:
-            d = inputmd_dir(self.ws.root, x)
-            if os.path.isdir(d) and os.listdir(d):
-                existing.append(d)
-
-        if existing and cfg.confirm_inputmd_overwrite:
-            mb = QMessageBox(self)
-            mb.setWindowTitle("inputMD")
-            mb.setIcon(QMessageBox.Icon.Warning)
-            mb.setText("同じ入力（パス一致）の inputMD が既に存在します。\nどう処理しますか？")
-            mb.setInformativeText("対象: " + "\n".join(existing[:5]) + ("\n..." if len(existing) > 5 else ""))
-            btn_over = mb.addButton("上書き", QMessageBox.ButtonRole.AcceptRole)
-            btn_app = mb.addButton("追記", QMessageBox.ButtonRole.DestructiveRole)
-            mb.addButton("キャンセル", QMessageBox.ButtonRole.RejectRole)
-            chk = QCheckBox("次回から確認しない", mb)
-            mb.setCheckBox(chk)
-            mb.exec()
-            clicked = mb.clickedButton()
-            if clicked == btn_over:
-                cfg.inputmd_mode = "overwrite"
-            elif clicked == btn_app:
-                cfg.inputmd_mode = "append"
-            else:
-                return
-            if chk.isChecked():
-                cfg.confirm_inputmd_overwrite = False
-            save_config(cfg)
-        elif not existing:
-            cfg.inputmd_mode = "overwrite" if self._run_tab.radio_overwrite.isChecked() else "append"
-
-        os.environ["XEL_TOOLKIT_INPUTMD_MODE"] = cfg.inputmd_mode
+        # inputMD: dedup is handled by xel_to_md.py; no overwrite dialog needed
 
         out_dir = os.path.join(self.ws.root, "runs", datetime.now().strftime("%Y%m%d_%H%M%S"))
         os.makedirs(out_dir, exist_ok=True)
