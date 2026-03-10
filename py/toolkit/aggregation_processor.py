@@ -856,9 +856,10 @@ class AggregationProcessor:
                         dur_sec = None
                     if dur_sec is None or dur_sec < slow_threshold_sec:
                         continue
-                    sql = actions.get("sql_text") or fields.get("statement") or fields.get("batch_text")
+                    raw_statement = fields.get("statement")
+                    sql = actions.get("sql_text") or raw_statement or fields.get("batch_text")
                     ctx = pick_context(str(sql or ""))
-                    rows.append({
+                    row: Dict[str, Any] = {
                         "event": ev.name,
                         "timestamp": ev.timestamp,
                         "duration_us": dur_us,
@@ -878,7 +879,11 @@ class AggregationProcessor:
                         "context_module": ctx.module if ctx else None,
                         "context_function": ctx.function if ctx else None,
                         "sql_text": sql,
-                    })
+                    }
+                    # statement フィールドが存在する場合のみ列として追加する
+                    if raw_statement is not None:
+                        row["statement"] = raw_statement
+                    rows.append(row)
             if rows:
                 if split_by_date:
                     from collections import defaultdict
