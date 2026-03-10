@@ -83,36 +83,39 @@ def generate_slowquery_reports_from_jsonl(
         if dt is not None:
             r = merge_range(r, dt)
 
-        sql_text = actions.get("sql_text") or fields.get("statement") or fields.get("batch_text")
+        raw_statement = fields.get("statement")
+        sql_text = actions.get("sql_text") or raw_statement or fields.get("batch_text")
         sql_text = _clean_excel_text(sql_text)
 
         ctx = pick_context(str(sql_text or ""))
 
-        rows.append(
-            {
-                "event": ev.name,
-                "timestamp": ev.timestamp,
-                "duration_us": duration_us,
-                "duration_sec": duration_sec,
-                "cpu_time": fields.get("cpu_time"),
-                "logical_reads": fields.get("logical_reads"),
-                "physical_reads": fields.get("physical_reads"),
-                "writes": fields.get("writes"),
-                "row_count": fields.get("row_count"),
-                "database_name": _clean_excel_text(actions.get("database_name")),
-                "username": _clean_excel_text(actions.get("username")),
-                "client_app_name": _clean_excel_text(actions.get("client_app_name")),
-                "client_hostname": _clean_excel_text(actions.get("client_hostname")),
-                "session_id": actions.get("session_id"),
-                "object_name": _clean_excel_text(fields.get("object_name")),
-                "context_raw": _clean_excel_text(ctx.raw) if ctx else None,
-                "context_key": _clean_excel_text(ctx.key) if ctx else None,
-                "context_module": _clean_excel_text(ctx.module) if ctx else None,
-                "context_function": _clean_excel_text(ctx.function) if ctx else None,
-                "context_process": _clean_excel_text(ctx.process) if ctx else None,
-                "sql_text": sql_text,
-            }
-        )
+        row: Dict[str, Any] = {
+            "event": ev.name,
+            "timestamp": ev.timestamp,
+            "duration_us": duration_us,
+            "duration_sec": duration_sec,
+            "cpu_time": fields.get("cpu_time"),
+            "logical_reads": fields.get("logical_reads"),
+            "physical_reads": fields.get("physical_reads"),
+            "writes": fields.get("writes"),
+            "row_count": fields.get("row_count"),
+            "database_name": _clean_excel_text(actions.get("database_name")),
+            "username": _clean_excel_text(actions.get("username")),
+            "client_app_name": _clean_excel_text(actions.get("client_app_name")),
+            "client_hostname": _clean_excel_text(actions.get("client_hostname")),
+            "session_id": actions.get("session_id"),
+            "object_name": _clean_excel_text(fields.get("object_name")),
+            "context_raw": _clean_excel_text(ctx.raw) if ctx else None,
+            "context_key": _clean_excel_text(ctx.key) if ctx else None,
+            "context_module": _clean_excel_text(ctx.module) if ctx else None,
+            "context_function": _clean_excel_text(ctx.function) if ctx else None,
+            "context_process": _clean_excel_text(ctx.process) if ctx else None,
+            "sql_text": sql_text,
+        }
+        # statement フィールドが存在する場合のみ列として追加する
+        if raw_statement is not None:
+            row["statement"] = _clean_excel_text(raw_statement)
+        rows.append(row)
 
     df = pd.DataFrame(rows)
 
