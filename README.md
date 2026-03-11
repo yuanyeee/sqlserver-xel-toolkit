@@ -43,6 +43,11 @@ Markdown / Excel レポートと横断集計まで一括生成するツール群
 .\scripts\setup_uv.ps1
 ```
 
+> **企業GPO (AllSigned) で署名エラーが出る場合は `.bat` 版を使用してください**
+> ```cmd
+> scripts\setup_uv.bat
+> ```
+
 uv が未インストールの場合は先にインストールしてください: https://astral.sh/uv
 
 ### pip / venv
@@ -68,6 +73,11 @@ pip install -r py/requirements.txt
 # Windows (PowerShell)
 .\scripts\run_gui_uv.ps1
 ```
+
+> **企業GPO (AllSigned) で署名エラーが出る場合は `.bat` 版を使用してください**
+> ```cmd
+> scripts\run_gui_uv.bat
+> ```
 
 ### pip / venv
 
@@ -133,6 +143,11 @@ GUI は以下のタブで構成されています。
   C:\Users\you\Downloads\Slow_Queries*.xel `
   -o .\reports -SlowThresholdSec 3
 ```
+
+> **企業GPO (AllSigned) で署名エラーが出る場合は `.bat` 版を使用してください**
+> ```cmd
+> run.bat C:\Users\you\Downloads\blocking*.xel ... -o .\reports -SlowThresholdSec 3
+> ```
 
 ### 出力ファイル
 
