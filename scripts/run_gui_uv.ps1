@@ -8,7 +8,12 @@ if (-not $uv) {
   throw "uv not found. Install from https://astral.sh/uv and restart the terminal."
 }
 
-uv venv
+# Skip prompt if .venv already exists
+$env:UV_VENV_CLEAR = "1"
+
+if (-not (Test-Path ".venv")) {
+  uv venv
+}
 uv pip install -r py/requirements.txt
 
 uv run -m py.ui.app
