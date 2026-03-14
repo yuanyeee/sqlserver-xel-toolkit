@@ -50,7 +50,22 @@ function Find-Python {
 
 $DotNetExe = Find-DotNet
 if (-not $DotNetExe) {
-  throw "dotnet not found. Install .NET SDK (x64) and restart PowerShell: https://dotnet.microsoft.com/download"
+  throw "dotnet が見つかりません。.NET 8 SDK (LTS, x64) をインストールして PowerShell を再起動してください: https://dotnet.microsoft.com/download/dotnet/8.0"
+}
+
+# Verify minimum .NET version (8+)
+try {
+  $dotnetVersion = & $DotNetExe --version 2>$null
+  if ($dotnetVersion) {
+    $major = [int]($dotnetVersion -split '\.')[0]
+    if ($major -lt 8) {
+      throw ".NET $dotnetVersion が見つかりましたが、.NET 8 以上が必要です。`nInstall .NET 8 SDK (LTS) from: https://dotnet.microsoft.com/download/dotnet/8.0"
+    }
+  }
+} catch [System.Management.Automation.RuntimeException] {
+  throw $_
+} catch {
+  # version check failure is non-fatal; let dotnet run itself report the error
 }
 
 $PyCmd = Find-Python
