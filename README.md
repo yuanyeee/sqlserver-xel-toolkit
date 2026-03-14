@@ -24,7 +24,7 @@ Markdown / Excel レポートと横断集計まで一括生成するツール群
 ## 前提
 
 - macOS / Windows / Linux
-- .NET 10+（`src/*/*.csproj` の `TargetFramework` に合わせる）
+- .NET 8+（LTS 推奨。ダウンロード: https://dotnet.microsoft.com/download/dotnet/8.0 ）
 - Python 3.9+
 
 ---

@@ -1,8 +1,29 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-DOTNET="/usr/local/share/dotnet/dotnet"
 REPO_ROOT="$(cd "$(dirname "$0")" && pwd)"
+
+# Detect dotnet: PATH first, then common install locations
+if command -v dotnet &>/dev/null; then
+  DOTNET="dotnet"
+elif [[ -x "/usr/local/share/dotnet/dotnet" ]]; then
+  DOTNET="/usr/local/share/dotnet/dotnet"
+elif [[ -x "$HOME/.dotnet/dotnet" ]]; then
+  DOTNET="$HOME/.dotnet/dotnet"
+else
+  echo "ERROR: dotnet not found." >&2
+  echo "  Install .NET 8 SDK (LTS) from: https://dotnet.microsoft.com/download/dotnet/8.0" >&2
+  exit 1
+fi
+
+# Verify minimum .NET version (8+)
+_dotnet_ver="$("$DOTNET" --version 2>/dev/null || echo '0.0.0')"
+_dotnet_major="${_dotnet_ver%%.*}"
+if [[ "$_dotnet_major" -lt 8 ]]; then
+  echo "ERROR: .NET $_dotnet_ver が見つかりましたが、.NET 8 以上が必要です。" >&2
+  echo "  Install .NET 8 SDK (LTS) from: https://dotnet.microsoft.com/download/dotnet/8.0" >&2
+  exit 1
+fi
 OUT_DIR="$REPO_ROOT/reports"
 SLOW_THRESHOLD="3"
 START_JST=""
