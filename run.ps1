@@ -22,7 +22,19 @@ try {
   # best-effort
 }
 
-$RepoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+# [scriptblock]::Create() 経由（run.bat）で実行された場合、
+# $MyInvocation.MyCommand.Path は null になる。
+# run.bat が XEL_TOOLKIT_RUNDIR 環境変数にスクリプトディレクトリを設定するので
+# それをフォールバックとして使用する。
+$_cmdPath = $MyInvocation.MyCommand.Path
+if (-not [string]::IsNullOrWhiteSpace($_cmdPath)) {
+  $RepoRoot = Split-Path -Parent $_cmdPath
+} elseif (-not [string]::IsNullOrWhiteSpace($env:XEL_TOOLKIT_RUNDIR)) {
+  $RepoRoot = $env:XEL_TOOLKIT_RUNDIR.TrimEnd('\').TrimEnd('/')
+} else {
+  $RepoRoot = (Get-Location).Path
+}
+
 if ([string]::IsNullOrWhiteSpace($OutDir)) {
   $OutDir = Join-Path $RepoRoot 'reports'
 }
@@ -50,7 +62,15 @@ function Find-Python {
 
 $DotNetExe = Find-DotNet
 if (-not $DotNetExe) {
-  throw "dotnet not found. Install .NET SDK (x64) and restart PowerShell: https://dotnet.microsoft.com/download"
+  throw "dotnet が見つかりません。.NET 8 SDK (LTS, x64) をインストールして PowerShell を再起動してください: https://dotnet.microsoft.com/download/dotnet/8.0"
+}
+
+# Verify minimum .NET version (8+)
+$_dotnetVer = (& $DotNetExe --version 2>&1) -as [string]
+if ($_dotnetVer -match '^(\d+)\.') {
+  if ([int]$Matches[1] -lt 8) {
+    throw "dotnet $_dotnetVer が見つかりましたが、.NET 8 以上が必要です。`nInstall .NET 8 SDK (LTS) from: https://dotnet.microsoft.com/download/dotnet/8.0"
+  }
 }
 
 $PyCmd = Find-Python
