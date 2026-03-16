@@ -90,8 +90,38 @@ class ReportRow:
 
 
 def connect_db(db_path: str) -> sqlite3.Connection:
+    """Open workspace sqlite DB.
+
+    Defensive: ensure schema exists even if caller forgot to run init_db() or
+    the DB file was created without schema (common first-run failure).
+    """
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
+
+    # Ensure schema (cheap check first)
+    try:
+        row = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='runs'"
+        ).fetchone()
+        if row is None:
+            conn.executescript(SCHEMA_SQL)
+            conn.commit()
+            # best-effort migration for existing workspaces
+            try:
+                from .migrate import migrate
+
+                migrate(conn)
+                conn.commit()
+            except Exception:
+                pass
+    except Exception:
+        # As a last resort, try to initialize schema.
+        try:
+            conn.executescript(SCHEMA_SQL)
+            conn.commit()
+        except Exception:
+            pass
+
     return conn
 
 

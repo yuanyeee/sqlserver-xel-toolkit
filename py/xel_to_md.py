@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import os
 import re
 from datetime import datetime
@@ -388,12 +389,74 @@ def _write_deadlock_md(path: str, *, source: str, timestamp: str, xml_report: st
         f.write("\n".join(out))
 
 
+# ======================================================================
+# Event type mapping
+# ======================================================================
+
+_EVENT_TYPE_MAP: Dict[str, str] = {
+    "blocked_process_report": "Blocking",
+    "rpc_completed": "SlowQuery",
+    "sql_batch_completed": "SlowQuery",
+    "xml_deadlock_report": "DeadLock",
+}
+
+
+def _dedup_key(*, timestamp: str, event_name: str, actions: dict, fields: dict) -> str:
+    """Generate a deduplication hash from key event fields.
+
+    Returns a 16-char hex string.  Two events with the same dedup key
+    are considered identical and the later one is skipped.
+    """
+    parts = [
+        timestamp,
+        event_name,
+        str(fields.get("duration", "")),
+        str(actions.get("database_name", "") or fields.get("database_name", "")),
+        str(actions.get("session_id", "") or fields.get("session_id", "")),
+    ]
+    # For slowquery: include a hash of the SQL text
+    sql = actions.get("sql_text") or fields.get("statement") or fields.get("batch_text") or ""
+    if sql:
+        parts.append(hashlib.sha256(str(sql).encode("utf-8", errors="ignore")).hexdigest()[:16])
+    # For blocking: include blocked_process hash
+    bp = fields.get("blocked_process", "")
+    if bp:
+        parts.append(hashlib.sha256(str(bp).encode("utf-8", errors="ignore")).hexdigest()[:16])
+    # For deadlock: include xml_report hash
+    xr = fields.get("xml_report", "")
+    if xr:
+        parts.append(hashlib.sha256(str(xr).encode("utf-8", errors="ignore")).hexdigest()[:16])
+
+    combined = "|".join(parts)
+    return hashlib.sha256(combined.encode("utf-8")).hexdigest()[:16]
+
+
+def _existing_dedup_keys(folder: str) -> set:
+    """Collect dedup keys already present in the target folder.
+
+    File naming convention: ``{EventType}_{HHMMSS}_{dedupKey}.md``
+    """
+    keys: set = set()
+    if not os.path.isdir(folder):
+        return keys
+    for fn in os.listdir(folder):
+        if fn.endswith(".md"):
+            # Extract dedup key (last 16 hex chars before .md)
+            stem = fn[:-3]  # remove .md
+            parts = stem.rsplit("_", 1)
+            if len(parts) == 2 and len(parts[1]) == 16:
+                keys.add(parts[1])
+    return keys
+
+
 def main():
     ap = argparse.ArgumentParser(description="Convert XEL JSONL exports to per-event Markdown files")
     ap.add_argument("--jsonl", required=True, help="Input JSONL (from XelDump --export-jsonl)")
-    ap.add_argument("--out", required=True, help="Output root folder")
+    ap.add_argument("--out", required=True, help="Output root folder (inputMD root)")
     ap.add_argument("--key", required=True, help="Unique key (short hash) for this import batch")
     ap.add_argument("--event", required=True, help="Event name (e.g. blocked_process_report)")
+    ap.add_argument("--event-type", dest="event_type", default="",
+                    help="Event type folder name (Blocking/SlowQuery/DeadLock). Auto-detected from --event if omitted.")
     ap.add_argument("--source", required=True, help="Source XEL file name (for metadata)")
     ap.add_argument("--start", help='JST start time "YYYY-mm-dd HH:MM" (optional)')
     ap.add_argument("--end", help='JST end time "YYYY-mm-dd HH:MM" (optional)')
@@ -405,6 +468,7 @@ def main():
     out_root = os.path.expanduser(args.out)
     key = args.key
     event = args.event
+    event_type = args.event_type or _EVENT_TYPE_MAP.get(event, "Other")
 
     # Parse optional JST range (reuse toolkit.timeutil parser)
     from toolkit.timeutil import parse_jst_minute
@@ -422,7 +486,11 @@ def main():
         except Exception:
             ranges = []
 
+    # Pre-load existing dedup keys per date folder to skip duplicates
+    dedup_cache: Dict[str, set] = {}  # date_part -> set of dedup keys
+
     count = 0
+    skipped = 0
     for i, ev in enumerate(iter_events(args.jsonl, event_name=event), 1):
         dt = parse_iso(ev.timestamp or "")
         if dt is not None:
@@ -435,13 +503,34 @@ def main():
                     continue
             jst = to_jst(dt)
             date_part = jst.strftime("%Y%m%d")
+            time_part = jst.strftime("%H%M%S")
             dt_display = jst.strftime("%Y-%m-%d %H:%M:%S%z")
         else:
             date_part = "unknown"
+            time_part = "000000"
             dt_display = ev.timestamp or ""
 
-        folder = os.path.join(out_root, date_part)
-        filename = f"{date_part}_{key}_{event}_{i}.md"
+        # Compute dedup key
+        dk = _dedup_key(
+            timestamp=dt_display,
+            event_name=event,
+            actions=ev.actions,
+            fields=ev.fields,
+        )
+
+        # Check for duplicates
+        if date_part not in dedup_cache:
+            folder = os.path.join(out_root, event_type, date_part)
+            dedup_cache[date_part] = _existing_dedup_keys(folder)
+
+        if dk in dedup_cache[date_part]:
+            skipped += 1
+            continue
+        dedup_cache[date_part].add(dk)
+
+        # Build path: {out}/{EventType}/{YYYYMMDD}/{EventType}_{HHMMSS}_{dedup}.md
+        folder = os.path.join(out_root, event_type, date_part)
+        filename = f"{event_type}_{time_part}_{dk}.md"
         path = os.path.join(folder, filename)
 
         # Special case: deadlock report -> emit IntegratedTool-compatible markdown
@@ -508,14 +597,7 @@ def main():
         if args.limit and count >= args.limit:
             break
 
-    # index
-    os.makedirs(out_root, exist_ok=True)
-    with open(os.path.join(out_root, f"index_{key}_{event}.md"), "w", encoding="utf-8") as f:
-        f.write(f"# XEL MD index\n\n")
-        f.write(f"Event: {event}\n\n")
-        f.write(f"Key: {key}\n\n")
-        f.write(f"Generated at: {datetime.now():%Y-%m-%d %H:%M:%S}\n\n")
-        f.write(f"Count: {count}\n")
+    print(f"[xel_to_md] {event_type}: {count} files written, {skipped} duplicates skipped")
 
 
 if __name__ == "__main__":

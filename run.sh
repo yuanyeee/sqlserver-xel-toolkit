@@ -146,17 +146,9 @@ run_one() {
 
     if [[ -n "$WS" ]]; then
       # NOTE: inputMD is unfiltered (always export all events to markdown)
-      # inputMD dir is path-based to avoid collisions
-      local inputmd_mode
-      inputmd_mode="${XEL_TOOLKIT_INPUTMD_MODE:-overwrite}"
-      local file_hash
-      file_hash="$(echo -n "$xel" | shasum -a 256 | awk '{print substr($1,1,8)}')"
-      local inputmd_dir
-      inputmd_dir="$WS/inputMD/${safe_base}_${file_hash}"
-      if [[ "$inputmd_mode" == "overwrite" && -d "$inputmd_dir" ]]; then
-        rm -rf "$inputmd_dir" || true
-      fi
-      XEL_TOOLKIT_RANGES_JSON= python3 "$REPO_ROOT/py/xel_to_md.py" --jsonl "$deadlock_jsonl" --out "$inputmd_dir" --key "$KEY" --event xml_deadlock_report --source "$xel" >/dev/null
+      local inputmd_root
+      inputmd_root="$WS/inputMD"
+      XEL_TOOLKIT_RANGES_JSON= python3 "$REPO_ROOT/py/xel_to_md.py" --jsonl "$deadlock_jsonl" --out "$inputmd_root" --key "$KEY" --event xml_deadlock_report --event-type DeadLock --source "$xel"
     fi
 
     python3 "$REPO_ROOT/py/generate_reports.py" \
@@ -180,17 +172,9 @@ run_one() {
 
     if [[ -n "$WS" ]]; then
       # NOTE: inputMD is unfiltered (always export all events to markdown)
-      # inputMD dir is path-based to avoid collisions
-      local inputmd_mode
-      inputmd_mode="${XEL_TOOLKIT_INPUTMD_MODE:-overwrite}"
-      local file_hash
-      file_hash="$(echo -n "$xel" | shasum -a 256 | awk '{print substr($1,1,8)}')"
-      local inputmd_dir
-      inputmd_dir="$WS/inputMD/${safe_base}_${file_hash}"
-      if [[ "$inputmd_mode" == "overwrite" && -d "$inputmd_dir" ]]; then
-        rm -rf "$inputmd_dir" || true
-      fi
-      XEL_TOOLKIT_RANGES_JSON= python3 "$REPO_ROOT/py/xel_to_md.py" --jsonl "$blocking_jsonl" --out "$inputmd_dir" --key "$KEY" --event blocked_process_report --source "$xel" >/dev/null
+      local inputmd_root
+      inputmd_root="$WS/inputMD"
+      XEL_TOOLKIT_RANGES_JSON= python3 "$REPO_ROOT/py/xel_to_md.py" --jsonl "$blocking_jsonl" --out "$inputmd_root" --key "$KEY" --event blocked_process_report --event-type Blocking --source "$xel"
     fi
 
     python3 "$REPO_ROOT/py/generate_reports.py" \
@@ -225,18 +209,10 @@ run_one() {
 
     if [[ -n "$WS" ]]; then
       # NOTE: inputMD is unfiltered (always export all events to markdown)
-      # inputMD dir is path-based to avoid collisions
-      local inputmd_mode
-      inputmd_mode="${XEL_TOOLKIT_INPUTMD_MODE:-overwrite}"
-      local file_hash
-      file_hash="$(echo -n "$xel" | shasum -a 256 | awk '{print substr($1,1,8)}')"
-      local inputmd_dir
-      inputmd_dir="$WS/inputMD/${safe_base}_${file_hash}"
-      if [[ "$inputmd_mode" == "overwrite" && -d "$inputmd_dir" ]]; then
-        rm -rf "$inputmd_dir" || true
-      fi
-      XEL_TOOLKIT_RANGES_JSON= python3 "$REPO_ROOT/py/xel_to_md.py" --jsonl "$slow_jsonl" --out "$inputmd_dir" --key "$KEY" --event rpc_completed --source "$xel" >/dev/null
-      XEL_TOOLKIT_RANGES_JSON= python3 "$REPO_ROOT/py/xel_to_md.py" --jsonl "$slow_jsonl" --out "$inputmd_dir" --key "$KEY" --event sql_batch_completed --source "$xel" >/dev/null
+      local inputmd_root
+      inputmd_root="$WS/inputMD"
+      XEL_TOOLKIT_RANGES_JSON= python3 "$REPO_ROOT/py/xel_to_md.py" --jsonl "$slow_jsonl" --out "$inputmd_root" --key "$KEY" --event rpc_completed --event-type SlowQuery --source "$xel"
+      XEL_TOOLKIT_RANGES_JSON= python3 "$REPO_ROOT/py/xel_to_md.py" --jsonl "$slow_jsonl" --out "$inputmd_root" --key "$KEY" --event sql_batch_completed --event-type SlowQuery --source "$xel"
     fi
 
     python3 "$REPO_ROOT/py/generate_reports.py" \

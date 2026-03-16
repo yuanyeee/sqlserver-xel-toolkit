@@ -169,18 +169,12 @@ function RunOne([string]$path) {
   if (Test-JsonlNonEmpty $deadlockJsonl) {
     $key = Hash8 $prefix
     if (-not [string]::IsNullOrWhiteSpace($ws)) {
-      $inputmdMode = $env:XEL_TOOLKIT_INPUTMD_MODE
-      if ([string]::IsNullOrWhiteSpace($inputmdMode)) { $inputmdMode = 'overwrite' }
-      $fileHash = Hash8 (Resolve-Path -LiteralPath $path | Select-Object -ExpandProperty Path)
-      $out = Join-Path (Join-Path $ws 'inputMD') ("${safeBase}_${fileHash}")
-      if ($inputmdMode -eq 'overwrite' -and (Test-Path $out)) {
-        Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $out
-      }
+      $inputMdRoot = Join-Path $ws 'inputMD'
       # NOTE: inputMD is unfiltered (always export all events to markdown)
       $oldRanges = $env:XEL_TOOLKIT_RANGES_JSON
       $env:XEL_TOOLKIT_RANGES_JSON = $null
-      $cmd = @('python', (Join-Path $RepoRoot 'py/xel_to_md.py'), '--jsonl', $deadlockJsonl, '--out', $out, '--key', $key, '--event', 'xml_deadlock_report', '--source', $path)
-      & $PyExe @($PyPrefix + @($cmd[1..($cmd.Count-1)])) | Out-Null
+      $cmd = @('python', (Join-Path $RepoRoot 'py/xel_to_md.py'), '--jsonl', $deadlockJsonl, '--out', $inputMdRoot, '--key', $key, '--event', 'xml_deadlock_report', '--event-type', 'DeadLock', '--source', $path)
+      & $PyExe @($PyPrefix + @($cmd[1..($cmd.Count-1)]))
       $env:XEL_TOOLKIT_RANGES_JSON = $oldRanges
     }
     $cmd2 = @('python', (Join-Path $RepoRoot 'py/generate_reports.py'), '--deadlock-jsonl', $deadlockJsonl, '--source-xel', $path, '--prefix', $prefix, '--out', $fileOut)
@@ -196,19 +190,12 @@ function RunOne([string]$path) {
   if (Test-JsonlNonEmpty $blockingJsonl) {
     $key = Hash8 $prefix
     if (-not [string]::IsNullOrWhiteSpace($ws)) {
-      $out = Join-Path (Join-Path $ws 'inputMD') $safeBase
+      $inputMdRoot = Join-Path $ws 'inputMD'
       # NOTE: inputMD is unfiltered (always export all events to markdown)
-      $inputmdMode = $env:XEL_TOOLKIT_INPUTMD_MODE
-      if ([string]::IsNullOrWhiteSpace($inputmdMode)) { $inputmdMode = 'overwrite' }
-      $fileHash = Hash8 (Resolve-Path -LiteralPath $path | Select-Object -ExpandProperty Path)
-      $out = Join-Path (Join-Path $ws 'inputMD') ("${safeBase}_${fileHash}")
-      if ($inputmdMode -eq 'overwrite' -and (Test-Path $out)) {
-        Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $out
-      }
       $oldRanges = $env:XEL_TOOLKIT_RANGES_JSON
       $env:XEL_TOOLKIT_RANGES_JSON = $null
-      $cmd = @('python', (Join-Path $RepoRoot 'py/xel_to_md.py'), '--jsonl', $blockingJsonl, '--out', $out, '--key', $key, '--event', 'blocked_process_report', '--source', $path)
-      & $PyExe @($PyPrefix + @($cmd[1..($cmd.Count-1)])) | Out-Null
+      $cmd = @('python', (Join-Path $RepoRoot 'py/xel_to_md.py'), '--jsonl', $blockingJsonl, '--out', $inputMdRoot, '--key', $key, '--event', 'blocked_process_report', '--event-type', 'Blocking', '--source', $path)
+      & $PyExe @($PyPrefix + @($cmd[1..($cmd.Count-1)]))
       $env:XEL_TOOLKIT_RANGES_JSON = $oldRanges
     }
     $cmd2 = @('python', (Join-Path $RepoRoot 'py/generate_reports.py'), '--blocking-jsonl', $blockingJsonl, '--source-xel', $path, '--prefix', $prefix, '--out', $fileOut)
@@ -233,23 +220,16 @@ function RunOne([string]$path) {
   if (Test-JsonlNonEmpty $slowJsonl) {
     $key = Hash8 $prefix
     if (-not [string]::IsNullOrWhiteSpace($ws)) {
-      $out = Join-Path (Join-Path $ws 'inputMD') $safeBase
-      $inputmdMode = $env:XEL_TOOLKIT_INPUTMD_MODE
-      if ([string]::IsNullOrWhiteSpace($inputmdMode)) { $inputmdMode = 'overwrite' }
-      $fileHash = Hash8 (Resolve-Path -LiteralPath $path | Select-Object -ExpandProperty Path)
-      $out = Join-Path (Join-Path $ws 'inputMD') ("${safeBase}_${fileHash}")
-      if ($inputmdMode -eq 'overwrite' -and (Test-Path $out)) {
-        Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $out
-      }
+      $inputMdRoot = Join-Path $ws 'inputMD'
       # NOTE: inputMD is unfiltered (always export all events to markdown)
       $oldRanges = $env:XEL_TOOLKIT_RANGES_JSON
       $env:XEL_TOOLKIT_RANGES_JSON = $null
 
-      $cmd = @('python', (Join-Path $RepoRoot 'py/xel_to_md.py'), '--jsonl', $slowJsonl, '--out', $out, '--key', $key, '--event', 'rpc_completed', '--source', $path)
-      & $PyExe @($PyPrefix + @($cmd[1..($cmd.Count-1)])) | Out-Null
+      $cmd = @('python', (Join-Path $RepoRoot 'py/xel_to_md.py'), '--jsonl', $slowJsonl, '--out', $inputMdRoot, '--key', $key, '--event', 'rpc_completed', '--event-type', 'SlowQuery', '--source', $path)
+      & $PyExe @($PyPrefix + @($cmd[1..($cmd.Count-1)]))
 
-      $cmd = @('python', (Join-Path $RepoRoot 'py/xel_to_md.py'), '--jsonl', $slowJsonl, '--out', $out, '--key', $key, '--event', 'sql_batch_completed', '--source', $path)
-      & $PyExe @($PyPrefix + @($cmd[1..($cmd.Count-1)])) | Out-Null
+      $cmd = @('python', (Join-Path $RepoRoot 'py/xel_to_md.py'), '--jsonl', $slowJsonl, '--out', $inputMdRoot, '--key', $key, '--event', 'sql_batch_completed', '--event-type', 'SlowQuery', '--source', $path)
+      & $PyExe @($PyPrefix + @($cmd[1..($cmd.Count-1)]))
 
       $env:XEL_TOOLKIT_RANGES_JSON = $oldRanges
     }

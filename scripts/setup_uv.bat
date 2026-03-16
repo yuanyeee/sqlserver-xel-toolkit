@@ -1,5 +1,5 @@
 @echo off
-:: GPO AllSigned 環境でも動作する run_gui_uv.ps1 の .bat 版
+:: GPO AllSigned 環境でも動作する setup_uv.ps1 の .bat 版
 :: バッチファイルは PowerShell ExecutionPolicy の対象外です。
 setlocal
 pushd "%~dp0.."
@@ -12,5 +12,6 @@ if errorlevel 1 (
 
 uv venv
 uv pip install -r py\requirements.txt
-uv run -m py.ui.app
+
+echo Done. Activate with: .\.venv\Scripts\Activate.ps1
 popd
