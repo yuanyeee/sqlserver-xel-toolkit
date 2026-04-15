@@ -1,5 +1,9 @@
 # sqlserver-xel-toolkit
 
+🌐 Language: **日本語** | [English](./README.en.md) | [简体中文](./README.zh-CN.md)
+
+> このリポジトリの README は言語ごとに分割しています。上記リンクから各言語版へ移動できます。
+
 SQL Server Extended Events (`.xel`) を **macOS / Windows / Linux 上でオフライン解析**し、
 Markdown / Excel レポートと横断集計まで一括生成するツール群です。
 

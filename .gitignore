@@ -23,3 +23,5 @@ reports/
 *.xlsx
 *.md
 !README.md
+!README.en.md
+!README.zh-CN.md
